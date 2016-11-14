@@ -1,14 +1,19 @@
-
+#include <SFE_BMP180.h>
 #include <SPI.h>
 #include <Ethernet.h>
 #include <EthernetUdp.h>
-#include <Time.h>
+
+//#include <Time.h>
 #include<dht.h>
 dht DHT;
 
 #define DHT11_PIN 8 // Second pin, leave 3rd pin unconnected 4th is ground
 
+// You will need to create an SFE_BMP180 object, here called "pressure":
 
+SFE_BMP180 bmp;
+
+#define ALTITUDE 920.0 // Altitude of Bangalore in Karnataka, India. in meters
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
 byte mac[] = {
@@ -16,38 +21,12 @@ byte mac[] = {
 };
 IPAddress ip(192, 168, 1, 177);
 
-/* ******** NTP Server Settings ******** */
-/* us.pool.ntp.org NTP server
-   (Set to your time server of choice) */
-IPAddress timeServer(216, 23, 247, 62);
-
-/* Set this to the offset (in seconds) to your local time
-   This example is GMT +530 IST */
-const long timeZoneOffset = -19800L;
-
-/* Syncs to NTP server every 15 seconds for testing,
-   set to 1 hour or more to be reasonable */
-unsigned int ntpSyncTime = 3600;
-
-
-/* ALTER THESE VARIABLES AT YOUR OWN RISK */
-// local port to listen for UDP packets
-unsigned int localPort = 8888;
-// NTP time stamp is in the first 48 bytes of the message
-const int NTP_PACKET_SIZE = 48;
-// Buffer to hold incoming and outgoing packets
-byte packetBuffer[NTP_PACKET_SIZE];
-// A UDP instance to let us send and receive packets over UDP
-EthernetUDP Udp;
-// Keeps track of how long ago we updated the NTP server
-unsigned long ntpLastUpdate = 0;
-// Check last time clock displayed (Not in Production)
-time_t prevDisplay = 0;
-
 // Initialize the Ethernet server library
 // with the IP address and port you want to use
-// (port 80 is default for HTTP):
+// (port 8090 is default for HTTP):
 EthernetServer server(8090);
+
+
 
 int greenLedPin = 2;
 int yellowLedPin = 3;
@@ -73,7 +52,9 @@ void setup() {
     ; // wait for serial port to connect. Needed for native USB port only
   }
 
-
+  if (bmp.begin()) {
+    Serial.println("BMP init Success");
+  }
   // start the Ethernet connection and the server:
   Ethernet.begin(mac, ip);
   server.begin();
@@ -88,8 +69,32 @@ void setup() {
 
 
 void loop() {
+  char status;
+  double T, P, p0, a;
+  status = bmp.startTemperature();
+
   int chk = DHT.read11(DHT11_PIN);
-  tempInC = DHT.temperature;
+  // Start a temperature measurement:
+  // If request is successful, the number of ms to wait is returned.
+  // If request is unsuccessful, 0 is returned.
+
+  status = bmp.startTemperature();
+  if (status != 0)
+  {
+    // Wait for the measurement to complete:
+    delay(status);
+
+    // Retrieve the completed temperature measurement:
+    // Note that the measurement is stored in the variable T.
+    // Function returns 1 if successful, 0 if failure.
+
+    status = bmp.getTemperature(tempInC);
+    //    if (status != 0)
+    //    {
+    //      tempInC = T;
+  }
+  else Serial.println("error retrieving temperature measurement\n");
+
   humidity = DHT.humidity;
   dP = (dewPointFast(tempInC, humidity));
   dPF = ((dP * 9) / 5) + 32;
@@ -116,6 +121,7 @@ void loop() {
           client.println("<html>");
           client.println("<body style='background-color:#E6E6FA'>");
           client.println("<p style='color:red';style='font-family: Arial'>LIVE</p>");
+
           client.print("Room Temperature: <u>+</u>");
 
           client.print(tempInC, 1);
@@ -196,7 +202,7 @@ void loop() {
     client.stop();
   }
 }
-
+//}
 // reference: http://en.wikipedia.org/wiki/Dew_point
 double dewPointFast(double celsius, double humidity)
 {
