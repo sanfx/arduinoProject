@@ -82,7 +82,7 @@ void loop() {
   if (status != 0)
   {
     // Wait for the measurement to complete:
-    delay(status);
+//    delay(status);
 
     // Retrieve the completed temperature measurement:
     // Note that the measurement is stored in the variable T.
@@ -99,6 +99,16 @@ void loop() {
   dP = (dewPointFast(tempInC, humidity));
   dPF = ((dP * 9) / 5) + 32;
   tF = ((tempInC * 9) / 5) + 32;
+  analogValue = analogRead(lightSensorPin);
+  if (analogValue < 50) {
+    digitalWrite(redLedPin, HIGH);
+  }
+  else if (analogValue >= 50 && analogValue <= 100) {
+    digitalWrite(yellowLedPin, HIGH);
+  }
+  else {
+    digitalWrite(greenLedPin, HIGH);
+  }
 
   // listen for incoming clients
   EthernetClient client = server.available();
@@ -109,7 +119,7 @@ void loop() {
     while (client.connected()) {
       if (client.available()) {
         char c = client.read();
-        Serial.write(c);
+//        Serial.write(c);
         if (c == '\n' && currentLineIsBlank) {
           // send a standard http response header
           client.println("HTTP/1.1 200 OK");
@@ -119,7 +129,7 @@ void loop() {
           client.println();
           client.println("<!DOCTYPE HTML>");
           client.println("<html>");
-          client.println("<body style='background-color:#E6E6FA'>");
+          client.println("<body style='background-color:grey'>");
           client.println("<p style='color:red';style='font-family: Arial'>LIVE</p>");
 
           client.print("Room Temperature: <u>+</u>");
@@ -158,32 +168,23 @@ void loop() {
           }
           client.println("<br>");
 
-          analogValue = analogRead(lightSensorPin);
+
           client.print("Light Sensor reads ");
           client.print(analogValue);
           if (analogValue < 10) {
-            client.println(", Light is <b>off</b>");
-            digitalWrite(redLedPin, HIGH);
-
+            client.println(", Light is <font style='color:red';>off</font>");
           }
           else if (analogValue > 10 && analogValue < 50) {
-            client.println(", Light is <b>on</b>, but very dim");
+            client.println(", Light is Light is <font style='color:tellow';><b>on</b></font>, but very dim");
           }
           else if (analogValue >= 50 && analogValue <= 100) {
-            client.println(", Light is <b>on</b>, but not bright enough.");
-            digitalWrite(yellowLedPin, HIGH);
+            client.println(", Light is <font style='color:yellow';><b>on</b></font>, but not bright enough.");
           }
           else {
-
-            client.println(", Light is <b>on</b> and bright enough.");
-            digitalWrite(greenLedPin, HIGH);
+            client.println(", Light is <font style='color:green';><b>on</b></font>.");
           }
           Serial.print("Analogue Value ");
           Serial.println(analogValue);
-          //          delay(200);
-          digitalWrite(greenLedPin, LOW);
-          digitalWrite(yellowLedPin, LOW);
-          digitalWrite(redLedPin, LOW);
           client.println("</body></html>");
           break;
         }
@@ -201,8 +202,12 @@ void loop() {
     // close the connection:
     client.stop();
   }
+  delay(200);
+  digitalWrite(greenLedPin, LOW);
+  digitalWrite(yellowLedPin, LOW);
+  digitalWrite(redLedPin, LOW);
 }
-//}
+
 // reference: http://en.wikipedia.org/wiki/Dew_point
 double dewPointFast(double celsius, double humidity)
 {
