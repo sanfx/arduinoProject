@@ -1,16 +1,13 @@
 #include <SFE_BMP180.h>
 #include <SPI.h>
 #include <Ethernet.h>
-#include <EthernetUdp.h>
 
-//#include <Time.h>
 #include<dht.h>
 dht DHT;
 
 #define DHT11_PIN 8 // Second pin, leave 3rd pin unconnected 4th is ground
 
 // You will need to create an SFE_BMP180 object, here called "pressure":
-
 SFE_BMP180 bmp;
 
 #define ALTITUDE 920.0 // Altitude of Bangalore in Karnataka, India. in meters
@@ -26,15 +23,15 @@ IPAddress ip(192, 168, 1, 177);
 // (port 8090 is default for HTTP):
 EthernetServer server(8090);
 
+String HTTP_req;          // stores the HTTP request
+boolean LED_status = 0;   // state of LED, off by default
 
-
-int greenLedPin = 2;
+int greenLedPin = 2; // LED on pin 2
 int yellowLedPin = 3;
 int redLedPin = 4;
 
 int lightSensorPin = A0;
 int analogValue = 0;
-
 
 double tempInC;
 int humidity;
@@ -46,6 +43,9 @@ double hIinFah;
 double hIinCel;
 
 void setup() {
+  // start the Ethernet connection and the server:
+  Ethernet.begin(mac, ip);
+  server.begin();
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
   while (!Serial) {
@@ -55,22 +55,19 @@ void setup() {
   if (bmp.begin()) {
     Serial.println("BMP init Success");
   }
-  // start the Ethernet connection and the server:
-  Ethernet.begin(mac, ip);
-  server.begin();
+
   Serial.print("server is at ");
   Serial.println(Ethernet.localIP());
 
-  pinMode(greenLedPin, OUTPUT);
+  pinMode(greenLedPin, OUTPUT); // LED on pin 2
   pinMode(yellowLedPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
 
 }
 
-
 void loop() {
   char status;
-  double T, P, p0, a;
+  //  double P, p0, a;
   status = bmp.startTemperature();
 
   int chk = DHT.read11(DHT11_PIN);
@@ -81,17 +78,10 @@ void loop() {
   status = bmp.startTemperature();
   if (status != 0)
   {
-    // Wait for the measurement to complete:
-//    delay(status);
 
-    // Retrieve the completed temperature measurement:
-    // Note that the measurement is stored in the variable T.
-    // Function returns 1 if successful, 0 if failure.
-
+    //    delay(status);
     status = bmp.getTemperature(tempInC);
-    //    if (status != 0)
-    //    {
-    //      tempInC = T;
+
   }
   else Serial.println("error retrieving temperature measurement\n");
 
@@ -112,24 +102,34 @@ void loop() {
 
   // listen for incoming clients
   EthernetClient client = server.available();
+
   if (client) {
-    //    Serial.println("new client");
     // an http request ends with a blank line
     boolean currentLineIsBlank = true;
+    boolean sentHeader = false;
+
     while (client.connected()) {
       if (client.available()) {
         char c = client.read();
-//        Serial.write(c);
+        HTTP_req += c;  // save the HTTP request 1 char at a time
+        Serial.println(c);
         if (c == '\n' && currentLineIsBlank) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close");  // the connection will be closed after completion of the response
-          client.println("Refresh: 10");  // refresh the page automatically every 5 sec
-          client.println();
+
+          if (!sentHeader) {
+            // send a standard http response header
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-Type: text/html");
+            client.println("Connection: close");  // the connection will be closed after completion of the response
+            client.println("Refresh: 10");  // refresh the page automatically every 5 sec
+            client.println();
+            sentHeader = true;
+          }
+
           client.println("<!DOCTYPE HTML>");
-          client.println("<html>");
+          client.println("<html><head><title>");
+          client.println("Welcome to Arduino WebServer</title>");
           client.println("<body style='background-color:grey'>");
+          client.println(c);
           client.println("<p style='color:red';style='font-family: Arial'>LIVE</p>");
 
           client.print("Room Temperature: <u>+</u>");
@@ -144,13 +144,7 @@ void loop() {
           client.print("%<br>");
           client.print("Dew Point: ");
           client.print(dP);
-          client.print(" &#8451; ");
-          client.print("Heat Index: ");
-
-          // Heat Index calculation only valid if temperature is 80F or above
-          // and the humidity is 40% or above - Print tF if not true
-          //  Serial.print("tF =");
-          //  Serial.print(tF);
+          client.print("&#8451; Heat Index: ");
 
           if (tF < 70 || humidity < 30) {
             client.print(tempInC);
@@ -168,14 +162,13 @@ void loop() {
           }
           client.println("<br>");
 
-
           client.print("Light Sensor reads ");
           client.print(analogValue);
           if (analogValue < 10) {
             client.println(", Light is <font style='color:red';>off</font>");
           }
           else if (analogValue > 10 && analogValue < 50) {
-            client.println(", Light is Light is <font style='color:tellow';><b>on</b></font>, but very dim");
+            client.println(", Light is Light is <font style='color:yellow';><b>on</b></font>, but very dim");
           }
           else if (analogValue >= 50 && analogValue <= 100) {
             client.println(", Light is <font style='color:yellow';><b>on</b></font>, but not bright enough.");
@@ -183,9 +176,19 @@ void loop() {
           else {
             client.println(", Light is <font style='color:green';><b>on</b></font>.");
           }
+
           Serial.print("Analogue Value ");
           Serial.println(analogValue);
+
+          //          client.println("<h1>LED</h1>");
+          //          client.println("<p>Click to switch LED on and off.</p>");
+          //          client.println("<form method=\"get\">");
+          //          ProcessCheckbox(client);
+          //          client.println("</form>");
+
           client.println("</body></html>");
+          Serial.print(HTTP_req);
+          HTTP_req = "";    // finished with request, empty string
           break;
         }
         if (c == '\n') {
@@ -202,10 +205,10 @@ void loop() {
     // close the connection:
     client.stop();
   }
-  delay(200);
-  digitalWrite(greenLedPin, LOW);
-  digitalWrite(yellowLedPin, LOW);
-  digitalWrite(redLedPin, LOW);
+  //  delay(200);
+  //  digitalWrite(greenLedPin, LOW);
+  //  digitalWrite(yellowLedPin, LOW);
+  //  digitalWrite(redLedPin, LOW);
 }
 
 // reference: http://en.wikipedia.org/wiki/Dew_point
@@ -230,4 +233,32 @@ double heatIndex(double tempF, double humidity)
 
   double rv = (C * R + B) * R + A;
   return rv;
+}
+
+
+// switch LED and send back HTML for LED checkbox
+void ProcessCheckbox(EthernetClient cl)
+{
+  if (HTTP_req.indexOf("LED2=2") > -1) {  // see if checkbox was clicked
+    // the checkbox was clicked, toggle the LED
+    if (LED_status) {
+      LED_status = 0;
+    }
+    else {
+      LED_status = 1;
+    }
+  }
+
+  if (LED_status) {    // switch LED on
+    digitalWrite(greenLedPin, HIGH);
+    // checkbox is checked
+    cl.println("<input type=\"checkbox\" name=\"LED2\" value=\"2\" \
+        onclick=\"submit();\" checked>LED2");
+  }
+  else {              // switch LED off
+    digitalWrite(greenLedPin, LOW);
+    // checkbox is unchecked
+    cl.println("<input type=\"checkbox\" name=\"LED2\" value=\"2\" \
+        onclick=\"submit();\">LED2");
+  }
 }
