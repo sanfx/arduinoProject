@@ -1,6 +1,8 @@
 #include <SFE_BMP180.h>
 #include <SPI.h>
 #include <Ethernet.h>
+#include "Dewpnt_heatIndx.h"
+
 
 #include<dht.h>
 dht DHT;
@@ -26,6 +28,13 @@ EthernetServer server(8090);
 String HTTP_req;          // stores the HTTP request
 boolean LED_status = 0;   // state of LED, off by default
 
+int solenoidPin = 4;    //This is the output pin on the Arduino we are using
+
+int GLED = 8; // Wet Indicator at Digital PIN D8
+int RLED = 9; // Dry Indicator at Digital PIN D9
+int SENSE = 1; // Soil Sensor input at Analog PIN A1
+int val = 0;
+
 int greenLedPin = 2; // LED on pin 2
 int yellowLedPin = 3;
 int redLedPin = 4;
@@ -43,6 +52,7 @@ double hIinFah;
 double hIinCel;
 
 void setup() {
+  pinMode(solenoidPin, OUTPUT);           //Sets the pin as an output
   // start the Ethernet connection and the server:
   Ethernet.begin(mac, ip);
   server.begin();
@@ -66,8 +76,9 @@ void setup() {
 }
 
 void loop() {
+  val = analogRead(SENSE);
+  val = val / 10;
   char status;
-  //  double P, p0, a;
   status = bmp.startTemperature();
 
   int chk = DHT.read11(DHT11_PIN);
@@ -79,14 +90,14 @@ void loop() {
   if (status != 0)
   {
 
-    //    delay(status);
+    delay(status);
     status = bmp.getTemperature(tempInC);
 
   }
   else Serial.println("error retrieving temperature measurement\n");
 
   humidity = DHT.humidity;
-  dP = (dewPointFast(tempInC, humidity));
+  dP = (Dewpnt_heatIndx::dewPointFast(tempInC, humidity));
   dPF = ((dP * 9) / 5) + 32;
   tF = ((tempInC * 9) / 5) + 32;
   analogValue = analogRead(lightSensorPin);
@@ -104,6 +115,7 @@ void loop() {
   EthernetClient client = server.available();
 
   if (client) {
+
     // an http request ends with a blank line
     boolean currentLineIsBlank = true;
     boolean sentHeader = false;
@@ -112,7 +124,7 @@ void loop() {
       if (client.available()) {
         char c = client.read();
         HTTP_req += c;  // save the HTTP request 1 char at a time
-        Serial.println(c);
+        //        Serial.print(c);
         if (c == '\n' && currentLineIsBlank) {
 
           if (!sentHeader) {
@@ -153,7 +165,7 @@ void loop() {
             client.println(" &#8457;");
           }
           else {
-            hIinFah = heatIndex(tF, humidity);
+            hIinFah = Dewpnt_heatIndx::heatIndex(tF, humidity);
             hIinCel = (hIinFah + 40) / 1.8 - 40;
             client.print(hIinCel);
             client.print(" &#8451;/ ");
@@ -168,7 +180,7 @@ void loop() {
             client.println(", Light is <font style='color:red';>off</font>");
           }
           else if (analogValue > 10 && analogValue < 50) {
-            client.println(", Light is Light is <font style='color:yellow';><b>on</b></font>, but very dim");
+            client.println(", Light is <font style='color:yellow';><b>on</b></font>, but very dim");
           }
           else if (analogValue >= 50 && analogValue <= 100) {
             client.println(", Light is <font style='color:yellow';><b>on</b></font>, but not bright enough.");
@@ -177,12 +189,38 @@ void loop() {
             client.println(", Light is <font style='color:green';><b>on</b></font>.");
           }
 
-          Serial.print("Analogue Value ");
-          Serial.println(analogValue);
+
+          client.print("<br>Soil Moisture: ");
+          client.print(val);
+          if (val < 80 && val > 50) {
+            client.println(", Soil is getting dry.");
+            // TODO: Send an alert email.
+          }
+          else if (val < 50)
+          {
+            // Wet Indicator at Digital PIN D8
+            digitalWrite(GLED, HIGH);
+            //Switch Solenoid OFF
+            digitalWrite(solenoidPin, LOW);
+            client.println (" Soil is damp.");
+          }
+          else
+          {
+            if (val > 100) {
+              client.println (" Soil is dry.");
+              //Switch Solenoid ON
+              digitalWrite(solenoidPin, HIGH);
+              // Dry Indicator at Digital PIN D9
+              digitalWrite(RLED, HIGH);
+            }
+
+
+          }
 
           //          client.println("<h1>LED</h1>");
           //          client.println("<p>Click to switch LED on and off.</p>");
           //          client.println("<form method=\"get\">");
+          //          client.println("<input type=\"hidden\" name=\"changeled\">");
           //          ProcessCheckbox(client);
           //          client.println("</form>");
 
@@ -199,59 +237,42 @@ void loop() {
           currentLineIsBlank = false;
         }
       }
+
     }
+
     // give the web browser time to receive the data
     delay(1);
     // close the connection:
     client.stop();
   }
-  //  delay(200);
-  //  digitalWrite(greenLedPin, LOW);
-  //  digitalWrite(yellowLedPin, LOW);
-  //  digitalWrite(redLedPin, LOW);
-}
-
-// reference: http://en.wikipedia.org/wiki/Dew_point
-double dewPointFast(double celsius, double humidity)
-{
-  double a = 17.271;
-  double b = 237.7;
-  double temp = (a * celsius) / (b + celsius) + log(humidity * 0.01);
-  double Td = (b * temp) / (a - temp);
-  return Td;
-}
-
-double heatIndex(double tempF, double humidity)
-{
-  double c1 = -42.38, c2 = 2.049, c3 = 10.14, c4 = -0.2248, c5 = -6.838e-3, c6 = -5.482e-2, c7 = 1.228e-3, c8 = 8.528e-4, c9 = -1.99e-6  ;
-  double T = tempF;
-  double R = humidity;
-
-  double A = (( c5 * T) + c2) * T + c1;
-  double B = ((c7 * T) + c4) * T + c3;
-  double C = ((c9 * T) + c8) * T + c6;
-
-  double rv = (C * R + B) * R + A;
-  return rv;
+  delay(200);
+  digitalWrite(greenLedPin, LOW);
+  digitalWrite(yellowLedPin, LOW);
+  digitalWrite(redLedPin, LOW);
 }
 
 
 // switch LED and send back HTML for LED checkbox
 void ProcessCheckbox(EthernetClient cl)
 {
-  if (HTTP_req.indexOf("LED2=2") > -1) {  // see if checkbox was clicked
-    // the checkbox was clicked, toggle the LED
-    if (LED_status) {
-      LED_status = 0;
-    }
-    else {
+  if (HTTP_req.indexOf("changeled") > -1) {  // see form was submitted
+
+
+    if (HTTP_req.indexOf("LED2=2") > -1) {  // see if checkbox was clicked
+      // the checkbox was clicked, toggle the LED
+      //      if (LED_status) {
       LED_status = 1;
     }
+    else {
+      LED_status = 0;
+    }
   }
+  //  }
 
   if (LED_status) {    // switch LED on
     digitalWrite(greenLedPin, HIGH);
     // checkbox is checked
+
     cl.println("<input type=\"checkbox\" name=\"LED2\" value=\"2\" \
         onclick=\"submit();\" checked>LED2");
   }
