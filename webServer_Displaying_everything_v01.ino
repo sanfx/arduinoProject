@@ -100,16 +100,11 @@ void loop() {
   dP = (Dewpnt_heatIndx::dewPointFast(tempInC, humidity));
   dPF = ((dP * 9) / 5) + 32;
   tF = ((tempInC * 9) / 5) + 32;
+  
   analogValue = analogRead(lightSensorPin);
-  if (analogValue < 50) {
-    digitalWrite(redLedPin, HIGH);
-  }
-  else if (analogValue >= 50 && analogValue <= 100) {
-    digitalWrite(yellowLedPin, HIGH);
-  }
-  else {
-    digitalWrite(greenLedPin, HIGH);
-  }
+  digitalWrite (redLedPin, analogValue < 55) ;
+  digitalWrite (yellowLedPin, analogValue >= 55 && analogValue <= 100) ;
+  digitalWrite (greenLedPin, analogValue > 100) ;
 
   // listen for incoming clients
   EthernetClient client = server.available();
@@ -245,10 +240,7 @@ void loop() {
     // close the connection:
     client.stop();
   }
-  delay(200);
-  digitalWrite(greenLedPin, LOW);
-  digitalWrite(yellowLedPin, LOW);
-  digitalWrite(redLedPin, LOW);
+
 }
 
 
