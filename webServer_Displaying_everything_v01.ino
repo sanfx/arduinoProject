@@ -7,8 +7,6 @@
 #include<dht.h>
 dht DHT;
 
-#define DHT11_PIN 8 // Second pin, leave 3rd pin unconnected 4th is ground
-
 // You will need to create an SFE_BMP180 object, here called "pressure":
 SFE_BMP180 bmp;
 
@@ -28,9 +26,11 @@ EthernetServer server(8090);
 String HTTP_req;          // stores the HTTP request
 boolean LED_status = 0;   // state of LED, off by default
 
-int solenoidPin = 4;    //This is the output pin on the Arduino we are using
+int solenoidPin = 6;    //This is the output pin on the Arduino we are using
 
-int GLED = 8; // Wet Indicator at Digital PIN D8
+#define DHT11_PIN 8 // for 2nd pin on DHT, leave 3rd pin unconnected 4th is ground
+
+int GLED = 5; // Wet Indicator at Digital PIN D5
 int RLED = 9; // Dry Indicator at Digital PIN D9
 int SENSE = 1; // Soil Sensor input at Analog PIN A1
 int val = 0;
@@ -73,6 +73,9 @@ void setup() {
   pinMode(yellowLedPin, OUTPUT);
   pinMode(redLedPin, OUTPUT);
 
+  pinMode(GLED, OUTPUT);
+  pinMode(RLED, OUTPUT);
+
 }
 
 void loop() {
@@ -100,11 +103,21 @@ void loop() {
   dP = (Dewpnt_heatIndx::dewPointFast(tempInC, humidity));
   dPF = ((dP * 9) / 5) + 32;
   tF = ((tempInC * 9) / 5) + 32;
-  
+
   analogValue = analogRead(lightSensorPin);
+  Serial.print("LDR value: ");
+  Serial.print(analogValue);
   digitalWrite (redLedPin, analogValue < 55) ;
   digitalWrite (yellowLedPin, analogValue >= 55 && analogValue <= 100) ;
   digitalWrite (greenLedPin, analogValue > 100) ;
+
+  Serial.print(" Soil Moisture: ");
+  Serial.println(val);
+  digitalWrite(GLED, (val < 50));
+  digitalWrite(RLED, (val > 50));
+  // Turn on Solenoid Valve if soil moisture value greater than 60
+  digitalWrite(solenoidPin, (val>60));
+
 
   // listen for incoming clients
   EthernetClient client = server.available();
@@ -187,37 +200,24 @@ void loop() {
 
           client.print("<br>Soil Moisture: ");
           client.print(val);
+
           if (val < 80 && val > 50) {
             client.println(", Soil is getting dry.");
             // TODO: Send an alert email.
           }
           else if (val < 50)
           {
-            // Wet Indicator at Digital PIN D8
-            digitalWrite(GLED, HIGH);
-            //Switch Solenoid OFF
-            digitalWrite(solenoidPin, LOW);
             client.println (" Soil is damp.");
           }
           else
           {
             if (val > 100) {
               client.println (" Soil is dry.");
-              //Switch Solenoid ON
-              digitalWrite(solenoidPin, HIGH);
-              // Dry Indicator at Digital PIN D9
-              digitalWrite(RLED, HIGH);
             }
 
 
           }
 
-          //          client.println("<h1>LED</h1>");
-          //          client.println("<p>Click to switch LED on and off.</p>");
-          //          client.println("<form method=\"get\">");
-          //          client.println("<input type=\"hidden\" name=\"changeled\">");
-          //          ProcessCheckbox(client);
-          //          client.println("</form>");
 
           client.println("</body></html>");
           Serial.print(HTTP_req);
@@ -243,35 +243,3 @@ void loop() {
 
 }
 
-
-// switch LED and send back HTML for LED checkbox
-void ProcessCheckbox(EthernetClient cl)
-{
-  if (HTTP_req.indexOf("changeled") > -1) {  // see form was submitted
-
-
-    if (HTTP_req.indexOf("LED2=2") > -1) {  // see if checkbox was clicked
-      // the checkbox was clicked, toggle the LED
-      //      if (LED_status) {
-      LED_status = 1;
-    }
-    else {
-      LED_status = 0;
-    }
-  }
-  //  }
-
-  if (LED_status) {    // switch LED on
-    digitalWrite(greenLedPin, HIGH);
-    // checkbox is checked
-
-    cl.println("<input type=\"checkbox\" name=\"LED2\" value=\"2\" \
-        onclick=\"submit();\" checked>LED2");
-  }
-  else {              // switch LED off
-    digitalWrite(greenLedPin, LOW);
-    // checkbox is unchecked
-    cl.println("<input type=\"checkbox\" name=\"LED2\" value=\"2\" \
-        onclick=\"submit();\">LED2");
-  }
-}
