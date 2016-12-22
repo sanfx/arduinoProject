@@ -4,13 +4,12 @@
 namespace util
 {
 
-void printProgStr(PGM_P str)
+void printProgStr(EthernetClient client, PGM_P str)
 {
   char c;
   if (!str) return;
   while ((c = pgm_read_byte(str++)))
-    //    Serial.print(c, BYTE);
-    Serial.write(c);
+    client.print(c);
 }
 
 // Convert normal decimal numbers to binary coded decimal
@@ -47,6 +46,9 @@ void readDS3231time(byte *second,
   *month = bcdToDec(Wire.read());
   *year = bcdToDec(Wire.read());
 }
+
+
+
 
 double* getTempHumdata(const int sensorPin)
 {
@@ -89,4 +91,80 @@ double* getTempHumdata(const int sensorPin)
       return nums;
   }
 }
+
+
+
+void displayTime(EthernetClient client)
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  // retrieve data from DS3231
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+                 &year);
+  client.print("Today is ");
+  switch (dayOfWeek) {
+    case 1:
+      client.println("Sunday,");
+      break;
+    case 2:
+      client.println("Monday,");
+      break;
+    case 3:
+      client.println("Tuesday,");
+      break;
+    case 4:
+      client.println("Wednesday,");
+      break;
+    case 5:
+      client.println("Thursday,");
+      break;
+    case 6:
+      client.println("Friday,");
+      break;
+    case 7:
+      client.println("Saturday,");
+      break;
+  }
+  const String msg = "";
+  // send it to the client
+  if (hour > 12 )
+  {
+    hour = hour - 12;
+    msg = " PM";
+  }
+  else
+  {
+    hour = hour;
+    msg = " AM";
+  }
+
+  client.print(hour, DEC);
+  // convert the byte variable to a decimal number when displayed
+  client.print(":");
+  if (minute < 10)
+  {
+    client.print("0");
+  }
+  client.print(minute, DEC);
+
+  client.print(msg);
+  client.print(" ");
+  client.print(dayOfMonth, DEC);
+  client.print("/");
+  client.print(month, DEC);
+  client.print("/");
+  client.print(year, DEC);
+}
+
+
+
+int getHour()
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  // retrieve data from DS3231
+  util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+                       &year);
+  return hour;
+}
+
+
 }
