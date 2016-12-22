@@ -355,8 +355,6 @@ void loop() {
     else if (connected == true)
     {
       delay(500);
-      Serial.println("Connection Successfull,inserting to database.");
-
       Serial.print("Inserting : ");
       Serial.println(INSERT_SQL);
       Serial.println("Connection Successfull,inserting to database.");
