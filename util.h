@@ -167,4 +167,14 @@ int getHour()
 }
 
 
+int getMinute()
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  // retrieve data from DS3231
+  util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+                       &year);
+  return minute;
+}
+
+
 }

@@ -161,34 +161,7 @@ void loop() {
   //  indorTempInF = (indorTempinC * 9.0) / 5.0 + 32;
   //  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, humidity));
   //  dPF = ((dP * 9) / 5) + 32;
-  // inserting to sql database on mysql server
-  INSERT_SQL = "";
-  INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
-  INSERT_SQL.concat(tempInC);
-  INSERT_SQL.concat("');");
 
-  const char *mycharp = INSERT_SQL.c_str();
-  delay(1000);
-
-  if (!connected) {
-    my_conn.mysql_connect(server_addr, 3306, user, password);
-    connected = true;
-  }
-  else if (connected == true)
-  {
-    delay(500);
-    Serial.println("Connection Successfull,inserting to database.");
-
-    Serial.print("Inserting : ");
-    Serial.println(INSERT_SQL);
-    Serial.println("Connection Successfull,inserting to database.");
-    my_conn.cmd_query(mycharp);
-
-  }
-  else {
-    Serial.println("Connection failed.");
-  }
-  //  delay(60000); // WAIT FOR A MINUTE BEFORE SENDING AGAIN
   analogValue = analogRead(lightSensorPin);
   Serial.print(F("LDR value: "));
   Serial.print(analogValue);
@@ -355,11 +328,47 @@ void loop() {
     }
 
     // give the web browser time to receive the data
-    //    delay(1);
-    delay(300000);
+    delay(1);
+    //    delay(300000); // 5 minutes
     // close the connection:
     client.stop();
   }
+
+  int mint = util::getMinute();
+
+  if (util::getMinute() - mint >= 5)
+
+  {
+    // inserting to sql database on mysql server
+    INSERT_SQL = "";
+    INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
+    INSERT_SQL.concat(tempInC);
+    INSERT_SQL.concat("');");
+
+    const char *mycharp = INSERT_SQL.c_str();
+    delay(1000);
+
+    if (!connected) {
+      my_conn.mysql_connect(server_addr, 3306, user, password);
+      connected = true;
+    }
+    else if (connected == true)
+    {
+      delay(500);
+      Serial.println("Connection Successfull,inserting to database.");
+
+      Serial.print("Inserting : ");
+      Serial.println(INSERT_SQL);
+      Serial.println("Connection Successfull,inserting to database.");
+      my_conn.cmd_query(mycharp);
+
+    }
+    else {
+      Serial.println("Connection failed.");
+    }
+    mint = util::getMinute();
+  }
+  //    delay(300000); // WAIT FOR A MINUTE BEFORE SENDING AGAIN
 
 }
 
