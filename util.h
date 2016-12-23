@@ -124,6 +124,14 @@ void displayTime(EthernetClient client)
       client.println("Saturday,");
       break;
   }
+  
+  client.print(" ");
+  client.print(dayOfMonth, DEC);
+  client.print("/");
+  client.print(month, DEC);
+  client.print("/");
+  client.print(year, DEC);
+  client.print(" Page was last loaded at: ");
   const String msg = "";
   // send it to the client
   if (hour > 12 )
@@ -147,12 +155,7 @@ void displayTime(EthernetClient client)
   client.print(minute, DEC);
 
   client.print(msg);
-  client.print(" ");
-  client.print(dayOfMonth, DEC);
-  client.print("/");
-  client.print(month, DEC);
-  client.print("/");
-  client.print(year, DEC);
+
 }
 
 

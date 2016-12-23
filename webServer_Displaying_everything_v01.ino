@@ -3,9 +3,7 @@
 #include <SPI.h>
 #include "Wire.h"
 #define DS3231_I2C_ADDRESS 0x68
-
 #include <Ethernet.h>
-#include <elapsedMillis.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "Dewpnt_heatIndx.h"
@@ -57,6 +55,8 @@ OneWire ourWire(ONE_WIRE_BUS);
 /* Tell Dallas Temperature Library to use oneWire Library */
 DallasTemperature tempSensor(&ourWire);
 
+int mint = 0;
+
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
 byte mac[] = {
@@ -64,7 +64,6 @@ byte mac[] = {
 };
 IPAddress ip(192, 168, 1, 177);
 IPAddress server_addr(192, 168, 1, 3);
-
 EthernetClient client;
 
 String data;
@@ -76,9 +75,16 @@ int result;
 EthernetServer server(8090);
 
 String rainMsg;
-
+unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
 // if val of soil moisture is greater than 30 turn on solenoid
-const int8_t DRY_SOIL_DEFAULT = 25;
+const int8_t DRY_SOIL_DEFAULT = 30;
+
+
+unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
+unsigned long timer = 0; // timer for sql insert after 5 minutes
+unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
+const int blinkDuration = 5000; // number of millisecs that Led's are on - all three leds use this
+const int onBoardLedInterval = 5000; // number of millisecs between blinks
 
 // ///////////// PIN Setup /////////////////
 const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we are using
@@ -105,16 +111,14 @@ double hIinCel;
 
 String soilMsg;
 
-elapsedMillis timer0;
+
 
 // the interval in mS
 #define interval 45000
 
 void setup() {
   Wire.begin();
-
   power_to_solenoid = false;
-  timer0 = 0; // clear the timer at the end of startup
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
   pinMode(buzzerout, OUTPUT);
   pinMode(rainsense, INPUT);
@@ -128,21 +132,25 @@ void setup() {
     // wait for serial port to connect. Needed for native USB port only
   }
 
-  Serial.print(F("server is at "));
-  Serial.println(Ethernet.localIP());
+  timer = millis(); // start timer
+
 }
+
+
 
 void startEthernet()
 {
   client.stop();
   Ethernet.begin(mac, ip);
   // give the Ethernet shield a second to initialize:
-  delay(1000);
+  delay(10);
   Serial.print(F("connected. My IP is "));
   Serial.println(Ethernet.localIP());
 }
 
 void loop() {
+  currentMillis = millis();   // capture the latest value of millis()
+
   int watrLvlSnsr = analogRead(pwatLvlSense);
   val = analogRead(SENSE);
   val = val / 10;
@@ -151,7 +159,7 @@ void loop() {
 
   //  tempInC = util::getTempHumdata(DHT11_PIN)[0];
   //  humidity = util::getTempHumdata(DHT11_PIN)[1];
-  delay(200);
+  //  delay(200); // 2 seconds stop for DHT to read
   int chk = DHT.read11(DHT11_PIN);
   tempSensor.requestTemperatures(); // Send the command to get temperatures
   tempInC = tempSensor.getTempCByIndex(0);
@@ -171,6 +179,12 @@ void loop() {
   Serial.print(F(", Soil Moisture: "));
   Serial.println(val);
 
+  if (val < DRY_SOIL_DEFAULT ) {
+    power_to_solenoid = true;
+    soilMsg = F("Soil is dry");
+  } else soilMsg = F("Soil is damp.");
+
+
   if (rainSenseReading < 500)  {
     rainMsg = F("It is raining heavily !");
     power_to_solenoid = false;
@@ -178,10 +192,12 @@ void loop() {
   if (rainSenseReading < 300) {
     rainMsg = F("Moderate rain.");
     power_to_solenoid = false;
+    soilMsg = F("Watering plant is turned off when it is raining.");
   }
   if (rainSenseReading < 200) {
     rainMsg = F("Light Rain Showers !");
     power_to_solenoid = false;
+    soilMsg = F("Watering plant is turned off when it is raining.");
   }
   if (rainSenseReading > 500) {
     rainMsg = F("Not Raining.");
@@ -192,15 +208,14 @@ void loop() {
   // Do not water plant at night
   if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
     power_to_solenoid = false;
-
+    soilMsg = ". Watering plant is turned of at night.";
   }
-
   if (watrLvlSnsr >= 400) {
     power_to_solenoid = false;
   }
-
   // Turn on Solenoid Valve if soil moisture value less than 25
-  if (val < DRY_SOIL_DEFAULT && power_to_solenoid == true) {
+  if (power_to_solenoid == true)
+  { // i.e. if onBoardLedState is HIGH
     soilMsg = F("Soil is dry. ");
     // do not water pot if its raining or if it is night.
     if (analogValue > 300) {
@@ -208,19 +223,23 @@ void loop() {
       // turn solenoid off after 45 sec
       digitalWrite(solenoidPin, HIGH);
       digitalWrite(buzzerout, HIGH);
-      if ((!power_to_solenoid) && (timer0 > interval)) {
-        power_to_solenoid = false; // don't execute this again
-        digitalWrite(solenoidPin, LOW);
-        digitalWrite(buzzerout, LOW);
-      }
     }
-  }
-  else {
+    // if the Led is on, we must wait for the duration to expire before turning it off
+    if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
+      // time is up, so change the state to LOW
+      power_to_solenoid = false; // don't execute this again
+      digitalWrite(solenoidPin, LOW);
+      digitalWrite(buzzerout, LOW);
+    }
+    // and save the time when we made the change
+    previousOnBoardLedMillis += blinkDuration;
+  } else
+  {
+    power_to_solenoid = false; // don't execute this again
     digitalWrite(solenoidPin, LOW);
-    soilMsg = F("Soil is damp.");
-    power_to_solenoid = false;
     digitalWrite(buzzerout, LOW);
   }
+
 
   // listen for incoming clients
   EthernetClient client = server.available();
@@ -253,14 +272,14 @@ void loop() {
           util::printProgStr(client, htmlStyleMultiline );
           client.println(F("</head><body style='background-color:grey'>"));
           client.println(c);
-          client.print(F("<p style='color:red';style='font-family: Arial'> Today LIVE: </p>"));
+          client.print(F("<p style='color:red';style='font-family: Arial'> LIVE: </p>"));
           util::displayTime(client);
           if (rainSenseReading < 500) {
             client.print(rainMsg);
             client.print(F(" Rain Sensor reads: "));
             client.println(rainSenseReading);
           }
-          else client.println();
+
           client.print(F("<br>Outdoor Temperature: <u>+</u>"));
           client.print(tempInC, 1);
           client.print(F("&#8451; / "));
@@ -329,16 +348,14 @@ void loop() {
 
     // give the web browser time to receive the data
     delay(1);
-    //    delay(300000); // 5 minutes
     // close the connection:
     client.stop();
   }
+  // perform sql insert after 5 minutes
+  if ((millis() - timer) > sqlInsertInterval) {
+    // timed out
+    timer += sqlInsertInterval;// reset timer by moving it along to the next interval
 
-  int mint = util::getMinute();
-
-  if (util::getMinute() - mint >= 5)
-
-  {
     // inserting to sql database on mysql server
     INSERT_SQL = "";
     INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
@@ -346,15 +363,12 @@ void loop() {
     INSERT_SQL.concat("');");
 
     const char *mycharp = INSERT_SQL.c_str();
-    delay(1000);
-
     if (!connected) {
       my_conn.mysql_connect(server_addr, 3306, user, password);
       connected = true;
     }
     else if (connected == true)
     {
-      delay(500);
       Serial.print("Inserting : ");
       Serial.println(INSERT_SQL);
       Serial.println("Connection Successfull,inserting to database.");
@@ -364,9 +378,9 @@ void loop() {
     else {
       Serial.println("Connection failed.");
     }
-    mint = util::getMinute();
+
+
   }
-  //    delay(300000); // WAIT FOR A MINUTE BEFORE SENDING AGAIN
 
 }
 
