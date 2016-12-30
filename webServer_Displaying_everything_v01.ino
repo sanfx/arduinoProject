@@ -159,8 +159,8 @@ void loop() {
 
   //  tempInC = util::getTempHumdata(DHT11_PIN)[0];
   //  humidity = util::getTempHumdata(DHT11_PIN)[1];
-  //  delay(200); // 2 seconds stop for DHT to read
-  int chk = DHT.read11(DHT11_PIN);
+  delay(200); // 2 seconds stop for DHT to read
+//  int chk = DHT.read11(DHT11_PIN); 
   tempSensor.requestTemperatures(); // Send the command to get temperatures
   tempInC = tempSensor.getTempCByIndex(0);
   tF = tempSensor.getTempFByIndex(0);
@@ -378,8 +378,6 @@ void loop() {
     else {
       Serial.println("Connection failed.");
     }
-
-
   }
 
 }
