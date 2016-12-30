@@ -39,6 +39,19 @@ const char htmlStyleMultiline[] PROGMEM = "<style>"
 
 bool connected = false;
 
+// Define the number of samples to keep track of.  The higher the number,
+// the more the readings will be smoothed, but the slower the output will
+// respond to the input.  Using a constant rather than a normal variable lets
+// use this value to determine the size of the readings array.
+const int numReadings = 10;
+
+int readings[numReadings];      // the readings from the analog input
+int readIndex = 0;              // the index of the current reading
+int total = 0;                  // the running total
+int average = 0;                // the average
+
+
+
 /* Setup for the Connector/Arduino */
 Connector my_conn; // The Connector/Arduino reference
 
@@ -122,6 +135,12 @@ void setup() {
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
   pinMode(buzzerout, OUTPUT);
   pinMode(rainsense, INPUT);
+  
+  // initialize all the readings to 0:
+  for (int thisReading = 0; thisReading < numReadings; thisReading++) {
+    readings[thisReading] = 0;
+  }
+
   tempSensor.begin();
   startEthernet();
   connected = my_conn.mysql_connect(server_addr, 3306, user, password);
@@ -152,15 +171,37 @@ void loop() {
   currentMillis = millis();   // capture the latest value of millis()
 
   int watrLvlSnsr = analogRead(pwatLvlSense);
+
+  // subtract the last reading:
+  total = total - readings[readIndex];
+  // read from the sensor:
   val = analogRead(SENSE);
-  val = val / 10;
+  readings[readIndex] =  val / 10;
+  Serial.print("Readings from Soil Sensor: ");
+  Serial.println(val/10); // for debugging to be removed after done testing
+  // add the reading to the total:
+  total = total + readings[readIndex];
+  // advance to the next position in the array:
+  readIndex = readIndex + 1;
+
+  // if we're at the end of the array...
+  if (readIndex >= numReadings) {
+    // ...wrap around to the beginning:
+    readIndex = 0;
+  }
+
+  // calculate the average:
+  val = total / numReadings;
+  
+  Serial.print("Average Soil Sensor Reading: ");
+  Serial.println(val);// for debugging to be removed after done testing
 
   int rainSenseReading = analogRead(rainsense);
 
   //  tempInC = util::getTempHumdata(DHT11_PIN)[0];
   //  humidity = util::getTempHumdata(DHT11_PIN)[1];
   delay(200); // 2 seconds stop for DHT to read
-//  int chk = DHT.read11(DHT11_PIN); 
+  //  int chk = DHT.read11(DHT11_PIN);
   tempSensor.requestTemperatures(); // Send the command to get temperatures
   tempInC = tempSensor.getTempCByIndex(0);
   tF = tempSensor.getTempFByIndex(0);
