@@ -73,6 +73,12 @@ DallasTemperature tempSensor(&ourWire);
 
 int mint = 0;
 
+
+
+// size of buffer used to capture HTTP requests
+#define REQ_BUF_SZ   50
+
+
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
 byte mac[] = {
@@ -89,6 +95,9 @@ int result;
 // with the IP address and port you want to use
 // (port 8090 is default for HTTP):
 EthernetServer server(8090);
+char HTTP_req[REQ_BUF_SZ] = {0}; // buffered HTTP request stored as null terminated string
+char req_index = 0;              // index into HTTP_req buffer
+
 
 String rainMsg;
 unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
@@ -135,7 +144,7 @@ void setup() {
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
   pinMode(buzzerout, OUTPUT);
   pinMode(rainsense, INPUT);
-  
+
   // initialize all the readings to 0:
   for (int thisReading = 0; thisReading < numReadings; thisReading++) {
     readings[thisReading] = 0;
@@ -178,7 +187,7 @@ void loop() {
   val = analogRead(SENSE);
   readings[readIndex] =  val / 10;
   Serial.print("Readings from Soil Sensor: ");
-  Serial.println(val/10); // for debugging to be removed after done testing
+  Serial.println(val / 10); // for debugging to be removed after done testing
   // add the reading to the total:
   total = total + readings[readIndex];
   // advance to the next position in the array:
@@ -192,7 +201,7 @@ void loop() {
 
   // calculate the average:
   val = total / numReadings;
-  
+
   Serial.print("Average Soil Sensor Reading: ");
   Serial.println(val);// for debugging to be removed after done testing
 
@@ -292,94 +301,126 @@ void loop() {
     boolean sentHeader = false;
 
     while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-        Serial.print(c);
+      if (client.available()) {   // client data available to read
+        char c = client.read(); // read 1 byte (character) from client
+        // buffer first part of HTTP request in HTTP_req array (string)
+        // leave last element in array as 0 to null terminate string (REQ_BUF_SZ - 1)
+        if (req_index < (REQ_BUF_SZ - 1)) {
+          HTTP_req[req_index] = c;          // save HTTP request character
+          req_index++;
+        }
+        // last line of client request is blank and ends with \n
+        // respond to client only after last line received
+
         if (c == '\n' && currentLineIsBlank) {
 
           if (!sentHeader) {
             // send a standard http response header
             client.println(F("HTTP/1.1 200 OK"));
 
-            // Ajax request - send JSON output
-            if (StrContains(HTTP_req, "json")){
+          }
 
-            }
+          // Ajax request - send JSON output
+          if (util::StrContains(HTTP_req, "json"))
+          {
+            // Spit out JSON data
+            client.println("Content-Type: application/json;charset=utf-8");
+            client.println("Server: ArduinoMega");
+            client.println("Connnection: close");
+            client.println();
+            client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
+            client.print(tempInC);
+            client.print("\"}]}");
+            client.println();
+            break;
+
+          } else if (util::StrContains(HTTP_req, "ajax_inputs"))
+          {
+            // TODO : spit out xml data
+
+          } else {
             client.println(F("Content-Type: text/html"));
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
             client.println();
             sentHeader = true;
-          }
 
-          client.println(F("<!DOCTYPE HTML>"));
-          client.println(F("<html><head><title>"));
-          client.println(F("Welcome to Arduino WebServer</title>"));
-          util::printProgStr(client, htmlStyleMultiline );
-          client.println(F("</head><body style='background-color:grey'>"));
-          client.println(c);
-          client.print(F("<p style='color:red';style='font-family: Arial'> LIVE: </p>"));
-          util::displayTime(client);
-          if (rainSenseReading < 500) {
-            client.print(rainMsg);
-            client.print(F(" Rain Sensor reads: "));
-            client.println(rainSenseReading);
-          }
 
-          client.print(F("<br>Outdoor Temperature: <u>+</u>"));
-          client.print(tempInC, 1);
-          client.print(F("&#8451; / "));
-          client.print(tF);
-          client.println(F(" &#8457;"));
-          //          client.print("<br>Indoor temperature: ");
-          //          client.print(indorTempinC);
-          //          client.print("&#8451;/ ");
-          //          client.println(indorTempInF);
-          //          client.println(F(" &#8457;, Humidity: "));
-          //
-          //          client.print(humidity, 1);
-          //          client.print(F("%<br>Dew Point: "));
-          //          client.print(dP);
-          //          client.print(F("&#8451; Heat Index: "));
-          //
-          //          if (tF < 70 || humidity < 30) {
-          //            client.print(tempInC);
-          //            client.print(F(" &#8451; / "));
-          //            client.print(tF);
-          //            client.println(F(" &#8457;"));
-          //          }
-          //          else {
-          //            hIinFah = Dewpnt_heatIndx::heatIndex(tF, humidity);
-          //            hIinCel = (hIinFah + 40) / 1.8 - 40;
-          //            client.print(hIinCel);
-          //            client.print(F(" &#8451;/ "));
-          //            client.print(hIinFah);
-          //            client.println(F(" &#8457; <br>"));
-          //          }
+            client.println(F("<!DOCTYPE HTML>"));
+            client.println(F("<html><head><title>"));
+            client.println(F("Welcome to Arduino WebServer</title>"));
+            util::printProgStr(client, htmlStyleMultiline );
+            client.println(F("</head><body style='background-color:grey'>"));
+            client.println(c);
+            client.print(F("<p style='color:red';style='font-family: Arial'> LIVE: </p>"));
+            util::displayTime(client);
+            if (rainSenseReading < 500) {
+              client.print(rainMsg);
+              client.print(F(" Rain Sensor reads: "));
+              client.println(rainSenseReading);
+            }
 
-          if (analogValue < 10) {
-            client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
-          }
-          else if (analogValue > 10 && analogValue < 50) {
-            client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
-          }
-          else if (analogValue >= 50 && analogValue <= 100) {
-            client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
-          }
-          else {
-            client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
-          }
+            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
+            client.print(tempInC, 1);
+            client.print(F("&#8451; / "));
+            client.print(tF);
+            client.println(F(" &#8457;"));
+            //          client.print("<br>Indoor temperature: ");
+            //          client.print(indorTempinC);
+            //          client.print("&#8451;/ ");
+            //          client.println(indorTempInF);
+            //          client.println(F(" &#8457;, Humidity: "));
+            //
+            //          client.print(humidity, 1);
+            //          client.print(F("%<br>Dew Point: "));
+            //          client.print(dP);
+            //          client.print(F("&#8451; Heat Index: "));
+            //
+            //          if (tF < 70 || humidity < 30) {
+            //            client.print(tempInC);
+            //            client.print(F(" &#8451; / "));
+            //            client.print(tF);
+            //            client.println(F(" &#8457;"));
+            //          }
+            //          else {
+            //            hIinFah = Dewpnt_heatIndx::heatIndex(tF, humidity);
+            //            hIinCel = (hIinFah + 40) / 1.8 - 40;
+            //            client.print(hIinCel);
+            //            client.print(F(" &#8451;/ "));
+            //            client.print(hIinFah);
+            //            client.println(F(" &#8457; <br>"));
+            //          }
 
-          client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
-          client.print(analogValue);
-          client.println(F("</span></div>"));
-          client.print(F("<br>Pot Soil Moisture: "));
-          client.print(val);
-          client.print(F("(averaged out of last 30 values) &nbsp;"));
-          client.println(soilMsg);
-          client.println (F("</body></html>"));
+            if (analogValue < 10) {
+              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
+            }
+            else if (analogValue > 10 && analogValue < 50) {
+              client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
+            }
+            else if (analogValue >= 50 && analogValue <= 100) {
+              client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
+            }
+            else {
+              client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
+            }
 
-          break;
+            client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
+            client.print(analogValue);
+            client.println(F("</span></div>"));
+            client.print(F("<br>Pot Soil Moisture: "));
+            client.print(val);
+            client.print(F("(averaged out of last 30 values) &nbsp;"));
+            client.println(soilMsg);
+            client.println (F("</body></html>"));
+
+            // display received HTTP request on serial port
+            Serial.print(HTTP_req);
+            // reset buffer index and all buffer elements to 0
+            req_index = 0;
+            util::StrClear(HTTP_req, REQ_BUF_SZ);
+
+            break;
+          }
         }
         if (c == '\n') {
           // you're starting a new line
@@ -396,6 +437,7 @@ void loop() {
     delay(1);
     // close the connection:
     client.stop();
+
   }
   // perform sql insert after 5 minutes
   if ((millis() - timer) > sqlInsertInterval) {
