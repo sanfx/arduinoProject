@@ -43,7 +43,10 @@ bool connected = false;
 // the more the readings will be smoothed, but the slower the output will
 // respond to the input.  Using a constant rather than a normal variable lets
 // use this value to determine the size of the readings array.
-const int numReadings = 10;
+const int numReadings = 30;
+
+// if val of soil moisture is greater than 30 turn on solenoid
+const int8_t DRY_SOIL_DEFAULT = 40;
 
 int readings[numReadings];      // the readings from the analog input
 int readIndex = 0;              // the index of the current reading
@@ -89,9 +92,6 @@ EthernetServer server(8090);
 
 String rainMsg;
 unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
-// if val of soil moisture is greater than 30 turn on solenoid
-const int8_t DRY_SOIL_DEFAULT = 30;
-
 
 unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
 unsigned long timer = 0; // timer for sql insert after 5 minutes
@@ -249,7 +249,7 @@ void loop() {
   // Do not water plant at night
   if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
     power_to_solenoid = false;
-    soilMsg = ". Watering plant is turned of at night.";
+    soilMsg = ". Watering plant is turned off at night.";
   }
   if (watrLvlSnsr >= 400) {
     power_to_solenoid = false;
@@ -300,6 +300,11 @@ void loop() {
           if (!sentHeader) {
             // send a standard http response header
             client.println(F("HTTP/1.1 200 OK"));
+
+            // Ajax request - send JSON output
+            if (StrContains(HTTP_req, "json")){
+
+            }
             client.println(F("Content-Type: text/html"));
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
@@ -370,7 +375,7 @@ void loop() {
           client.println(F("</span></div>"));
           client.print(F("<br>Pot Soil Moisture: "));
           client.print(val);
-          client.print(F("&nbsp;"));
+          client.print(F("(averaged out of last 30 values) &nbsp;"));
           client.println(soilMsg);
           client.println (F("</body></html>"));
 
