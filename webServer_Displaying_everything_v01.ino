@@ -183,7 +183,8 @@ void startEthernet()
   // Serial.println(Ethernet.localIP());
 }
 
-void loop() {
+void loop()
+{
   currentMillis = millis();   // capture the latest value of millis()
 
   int watrLvlSnsr = analogRead(pwatLvlSense);
@@ -297,64 +298,42 @@ void loop() {
     digitalWrite(buzzerout, LOW);
   }
 
+  EthernetClient client = server.available();  // try to get client
 
-  // listen for incoming clients
-  EthernetClient client = server.available();
-
-  if (client) {
-
-    // an http request ends with a blank line
+  if (client) {  // got client?
     boolean currentLineIsBlank = true;
-    boolean sentHeader = false;
-
     while (client.connected()) {
       if (client.available()) {   // client data available to read
         char c = client.read(); // read 1 byte (character) from client
         // buffer first part of HTTP request in HTTP_req array (string)
         // leave last element in array as 0 to null terminate string (REQ_BUF_SZ - 1)
         if (req_index < (REQ_BUF_SZ - 1)) {
-//          Serial.print("req_index: ");
-//          Serial.print(req_index);
-//          Serial.print(" REQ_BUF_SZ: ");
-//          Serial.println(REQ_BUF_SZ);
           HTTP_req[req_index] = c;          // save HTTP request character
           req_index++;
         }
         // last line of client request is blank and ends with \n
         // respond to client only after last line received
-
         if (c == '\n' && currentLineIsBlank) {
-          client.println(F("HTTP/1.1 200 OK"));
-          
-          Serial.println("HTTP_req");
-//          Serial.println(HTTP_req);
-
-          // Ajax request - send JSON output
-          if (util::StrContains(HTTP_req, "json"))
-          {
-            // Spit out JSON data
-            client.println("Content-Type: application/json;charset=utf-8");
-            client.println("Server: ArduinoMega");
-//            client.println("<meta http-equiv='cache-control' content='max-age=0' />");
-//            client.println("<meta http-equiv='cache-control' content='no-cache' />");
-//            client.println("<meta http-equiv='expires' content='0' />");
-//            client.println("<meta http-equiv='expires' content='Tue, 01 Jan 1980 1:00:00 GMT' />");
-//            client.println("<meta http-equiv='pragma' content='no-cache' />");
-            client.println("Connnection: close");
+          // send a standard http response header
+          client.println("HTTP/1.1 200 OK");
+          // remainder of header follows below, depending on if
+          // web page or XML page is requested
+          // Ajax request - send XML file
+          if (StrContains(HTTP_req, "json")) {
+            // send rest of HTTP header
+            client.println("Content-Type: text/xml");
+            client.println("Connection: keep-alive");
             client.println();
-            client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
-            client.print(tempInC);
-            client.print("\"}]}");
-            client.println();
-            break;
-
-          } else 
-          {
+            // send XML file containing input states
+            XML_response(client);
+          }
+          else {  // web page request
+            // send rest of HTTP header
             client.println(F("Content-Type: text/html"));
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
             client.println();
-            sentHeader = true;
+//            sentHeader = true;
 
 
             client.println(F("<!DOCTYPE HTML>"));
@@ -425,6 +404,9 @@ void loop() {
             client.println (F("</body></html>"));
 
 
+
+
+
           }
           // display received HTTP request on serial port
           Serial.print(HTTP_req);
@@ -433,23 +415,21 @@ void loop() {
           StrClear(HTTP_req, REQ_BUF_SZ);
           break;
         }
+        // every line of text received from the client ends with \r\n
         if (c == '\n') {
-          // you're starting a new line
+          // last character on line of received text
+          // starting new line with next character read
           currentLineIsBlank = true;
-        } else if (c != '\r') {
-          // you've gotten a character on the current line
+        }
+        else if (c != '\r') {
+          // a text character was received from client
           currentLineIsBlank = false;
         }
-      }
-
-    }
-
-    // give the web browser time to receive the data
-    delay(1);
-    // close the connection:
-    client.stop();
-
-  }
+      } // end if (client.available())
+    } // end while (client.connected())
+    delay(1);      // give the web browser time to receive the data
+    client.stop(); // close the connection
+  } // end if (client)
   // perform sql insert after 5 minutes
   if ((millis() - timer) > sqlInsertInterval) {
     // timed out
@@ -468,7 +448,7 @@ void loop() {
     }
     else if (connected == true)
     {
-     // Serial.print("Inserting : ");
+      // Serial.print("Inserting : ");
       //Serial.println(INSERT_SQL);
       //Serial.println("Connection Successfull,inserting to database.");
       my_conn.cmd_query(mycharp);
@@ -478,7 +458,67 @@ void loop() {
       //Serial.println("Connection failed.");
     }
   }
+}
 
+// send the XML file containing analog value
+void XML_response(EthernetClient cl)
+{
+  int analog_val_1 = 0;
+  int analog_val_2 = 0;
+  char sample;
+
+  // get the sum of 10 samples from analog inputs 2 and 3
+  for (sample = 0; sample < 10; sample++) {
+    analog_val_1 += analogRead(2);
+    delay(2);
+    analog_val_2 += analogRead(3);
+    delay(2);
+  }
+  // calculate the average of the 10 samples
+  analog_val_1 /= 10;
+  analog_val_2 /= 10;
+
+  cl.print("<?xml version = \"1.0\" ?>");
+  cl.print("<inputs>");
+  // read analog pin A2
+  //    analog_val = analogRead(2);
+  cl.print("<analog>");
+  cl.print(analog_val_1);
+  cl.print("</analog>");
+  //    analog_val = analogRead(3);
+  cl.print("<analog>");
+  cl.print(analog_val_2);
+  cl.print("</analog>");
+  cl.print("</inputs>");
 }
 
 
+// searches for the string sfind in the string str
+// returns 1 if string found
+// returns 0 if string not found
+char StrContains(char *str, char *sfind)
+{
+  char found = 0;
+  char index = 0;
+  char len;
+
+  len = strlen(str);
+
+  if (strlen(sfind) > len) {
+    return 0;
+  }
+  while (index < len) {
+    if (str[index] == sfind[found]) {
+      found++;
+      if (strlen(sfind) == found) {
+        return 1;
+      }
+    }
+    else {
+      found = 0;
+    }
+    index++;
+  }
+
+  return 0;
+}
