@@ -11,6 +11,13 @@
 #include <dht.h>
 dht DHT;
 
+void StrClear(char *str, char length)
+{
+  for (int i = 0; i < length; i++) {
+    str[i] = 0;
+  }
+}
+
 const char htmlStyleMultiline[] PROGMEM = "<style>"
     ".tooltip {"
     "    position: relative;"
@@ -172,8 +179,8 @@ void startEthernet()
   Ethernet.begin(mac, ip);
   // give the Ethernet shield a second to initialize:
   delay(10);
-  Serial.print(F("connected. My IP is "));
-  Serial.println(Ethernet.localIP());
+  // Serial.print(F("connected. My IP is "));
+  // Serial.println(Ethernet.localIP());
 }
 
 void loop() {
@@ -186,8 +193,8 @@ void loop() {
   // read from the sensor:
   val = analogRead(SENSE);
   readings[readIndex] =  val / 10;
-  Serial.print("Readings from Soil Sensor: ");
-  Serial.println(val / 10); // for debugging to be removed after done testing
+  //Serial.print("Readings from Soil Sensor: ");
+  //Serial.println(val / 10); // for debugging to be removed after done testing
   // add the reading to the total:
   total = total + readings[readIndex];
   // advance to the next position in the array:
@@ -202,8 +209,8 @@ void loop() {
   // calculate the average:
   val = total / numReadings;
 
-  Serial.print("Average Soil Sensor Reading: ");
-  Serial.println(val);// for debugging to be removed after done testing
+  // Serial.print("Average Soil Sensor Reading: ");
+  //Serial.println(val);// for debugging to be removed after done testing
 
   int rainSenseReading = analogRead(rainsense);
 
@@ -221,13 +228,13 @@ void loop() {
   //  dPF = ((dP * 9) / 5) + 32;
 
   analogValue = analogRead(lightSensorPin);
-  Serial.print(F("LDR value: "));
-  Serial.print(analogValue);
+  // Serial.print(F("LDR value: "));
+  // Serial.print(analogValue);
   //  digitalWrite (redLedPin, analogValue < 55) ;
   //  digitalWrite (yellowLedPin, analogValue >= 55 && analogValue <= 100) ;
   //  digitalWrite (greenLedPin, analogValue > 100) ;
-  Serial.print(F(", Soil Moisture: "));
-  Serial.println(val);
+  // Serial.print(F(", Soil Moisture: "));
+  // Serial.println(val);
 
   if (val < DRY_SOIL_DEFAULT ) {
     power_to_solenoid = true;
@@ -306,6 +313,10 @@ void loop() {
         // buffer first part of HTTP request in HTTP_req array (string)
         // leave last element in array as 0 to null terminate string (REQ_BUF_SZ - 1)
         if (req_index < (REQ_BUF_SZ - 1)) {
+//          Serial.print("req_index: ");
+//          Serial.print(req_index);
+//          Serial.print(" REQ_BUF_SZ: ");
+//          Serial.println(REQ_BUF_SZ);
           HTTP_req[req_index] = c;          // save HTTP request character
           req_index++;
         }
@@ -313,12 +324,10 @@ void loop() {
         // respond to client only after last line received
 
         if (c == '\n' && currentLineIsBlank) {
-
-          if (!sentHeader) {
-            // send a standard http response header
-            client.println(F("HTTP/1.1 200 OK"));
-
-          }
+          client.println(F("HTTP/1.1 200 OK"));
+          
+          Serial.println("HTTP_req");
+//          Serial.println(HTTP_req);
 
           // Ajax request - send JSON output
           if (util::StrContains(HTTP_req, "json"))
@@ -326,6 +335,11 @@ void loop() {
             // Spit out JSON data
             client.println("Content-Type: application/json;charset=utf-8");
             client.println("Server: ArduinoMega");
+//            client.println("<meta http-equiv='cache-control' content='max-age=0' />");
+//            client.println("<meta http-equiv='cache-control' content='no-cache' />");
+//            client.println("<meta http-equiv='expires' content='0' />");
+//            client.println("<meta http-equiv='expires' content='Tue, 01 Jan 1980 1:00:00 GMT' />");
+//            client.println("<meta http-equiv='pragma' content='no-cache' />");
             client.println("Connnection: close");
             client.println();
             client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
@@ -334,11 +348,8 @@ void loop() {
             client.println();
             break;
 
-          } else if (util::StrContains(HTTP_req, "ajax_inputs"))
+          } else 
           {
-            // TODO : spit out xml data
-
-          } else {
             client.println(F("Content-Type: text/html"));
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
@@ -413,14 +424,14 @@ void loop() {
             client.println(soilMsg);
             client.println (F("</body></html>"));
 
-            // display received HTTP request on serial port
-            Serial.print(HTTP_req);
-            // reset buffer index and all buffer elements to 0
-            req_index = 0;
-            util::StrClear(HTTP_req, REQ_BUF_SZ);
 
-            break;
           }
+          // display received HTTP request on serial port
+          Serial.print(HTTP_req);
+          // reset buffer index and all buffer elements to 0
+          req_index = 0;
+          StrClear(HTTP_req, REQ_BUF_SZ);
+          break;
         }
         if (c == '\n') {
           // you're starting a new line
@@ -457,14 +468,14 @@ void loop() {
     }
     else if (connected == true)
     {
-      Serial.print("Inserting : ");
-      Serial.println(INSERT_SQL);
-      Serial.println("Connection Successfull,inserting to database.");
+     // Serial.print("Inserting : ");
+      //Serial.println(INSERT_SQL);
+      //Serial.println("Connection Successfull,inserting to database.");
       my_conn.cmd_query(mycharp);
 
     }
     else {
-      Serial.println("Connection failed.");
+      //Serial.println("Connection failed.");
     }
   }
 
