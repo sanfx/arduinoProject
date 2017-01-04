@@ -80,11 +80,8 @@ DallasTemperature tempSensor(&ourWire);
 
 int mint = 0;
 
-
-
 // size of buffer used to capture HTTP requests
 #define REQ_BUF_SZ   50
-
 
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
@@ -140,8 +137,6 @@ double hIinCel;
 
 String soilMsg;
 
-
-
 // the interval in mS
 #define interval 45000
 
@@ -170,8 +165,6 @@ void setup() {
   timer = millis(); // start timer
 
 }
-
-
 
 void startEthernet()
 {
@@ -321,11 +314,13 @@ void loop()
           // Ajax request - send XML file
           if (StrContains(HTTP_req, "json")) {
             // send rest of HTTP header
-            client.println("Content-Type: text/xml");
+            client.println("Content-Type: application/json;charset=utf-8");
             client.println("Connection: keep-alive");
             client.println();
-            // send XML file containing input states
-            XML_response(client);
+
+
+            outputJson(client);
+
           }
           else {  // web page request
             // send rest of HTTP header
@@ -333,7 +328,7 @@ void loop()
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
             client.println();
-//            sentHeader = true;
+            //            sentHeader = true;
 
 
             client.println(F("<!DOCTYPE HTML>"));
@@ -461,35 +456,12 @@ void loop()
 }
 
 // send the XML file containing analog value
-void XML_response(EthernetClient cl)
+void outputJson(EthernetClient client)
 {
-  int analog_val_1 = 0;
-  int analog_val_2 = 0;
-  char sample;
-
-  // get the sum of 10 samples from analog inputs 2 and 3
-  for (sample = 0; sample < 10; sample++) {
-    analog_val_1 += analogRead(2);
-    delay(2);
-    analog_val_2 += analogRead(3);
-    delay(2);
-  }
-  // calculate the average of the 10 samples
-  analog_val_1 /= 10;
-  analog_val_2 /= 10;
-
-  cl.print("<?xml version = \"1.0\" ?>");
-  cl.print("<inputs>");
-  // read analog pin A2
-  //    analog_val = analogRead(2);
-  cl.print("<analog>");
-  cl.print(analog_val_1);
-  cl.print("</analog>");
-  //    analog_val = analogRead(3);
-  cl.print("<analog>");
-  cl.print(analog_val_2);
-  cl.print("</analog>");
-  cl.print("</inputs>");
+  client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
+  client.print(tempInC);
+  client.print("\"}]}");
+  client.println();
 }
 
 
