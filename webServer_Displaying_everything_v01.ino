@@ -4,6 +4,7 @@
 #include "Wire.h"
 #define DS3231_I2C_ADDRESS 0x68
 #include <Ethernet.h>
+#include <ICMPPing.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "Dewpnt_heatIndx.h"
@@ -11,12 +12,11 @@
 #include <dht.h>
 dht DHT;
 
-void StrClear(char *str, char length)
-{
-  for (int i = 0; i < length; i++) {
-    str[i] = 0;
-  }
-}
+//  ping server socket
+SOCKET pingSocket = 0;
+char buffer [256];
+ICMPPing ping(pingSocket, (uint16_t)random(0, 255));
+
 
 const char htmlStyleMultiline[] PROGMEM = "<style>"
     ".tooltip {"
@@ -88,7 +88,7 @@ int mint = 0;
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
-IPAddress ip(192, 168, 1, 177);
+IPAddress ip(192, 168, 1, 156);
 IPAddress server_addr(192, 168, 1, 3);
 EthernetClient client;
 
@@ -98,7 +98,8 @@ int result;
 // Initialize the Ethernet server library
 // with the IP address and port you want to use
 // (port 8090 is default for HTTP):
-EthernetServer server(8090);
+EthernetServer server(8025);
+
 char HTTP_req[REQ_BUF_SZ] = {0}; // buffered HTTP request stored as null terminated string
 char req_index = 0;              // index into HTTP_req buffer
 
@@ -312,15 +313,12 @@ void loop()
           // remainder of header follows below, depending on if
           // web page or XML page is requested
           // Ajax request - send XML file
-          if (StrContains(HTTP_req, "json")) {
+          if (util::StrContains(HTTP_req, "json")) {
             // send rest of HTTP header
             client.println("Content-Type: application/json;charset=utf-8");
             client.println("Connection: keep-alive");
             client.println();
-
-
             outputJson(client);
-
           }
           else {  // web page request
             // send rest of HTTP header
@@ -407,7 +405,7 @@ void loop()
           Serial.print(HTTP_req);
           // reset buffer index and all buffer elements to 0
           req_index = 0;
-          StrClear(HTTP_req, REQ_BUF_SZ);
+          util::StrClear(HTTP_req, REQ_BUF_SZ);
           break;
         }
         // every line of text received from the client ends with \r\n
@@ -425,34 +423,45 @@ void loop()
     delay(1);      // give the web browser time to receive the data
     client.stop(); // close the connection
   } // end if (client)
+
+
   // perform sql insert after 5 minutes
   if ((millis() - timer) > sqlInsertInterval) {
-    // timed out
-    timer += sqlInsertInterval;// reset timer by moving it along to the next interval
-
-    // inserting to sql database on mysql server
-    INSERT_SQL = "";
-    INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
-    INSERT_SQL.concat(tempInC);
-    INSERT_SQL.concat("');");
-
-    const char *mycharp = INSERT_SQL.c_str();
-    if (!connected) {
-      my_conn.mysql_connect(server_addr, 3306, user, password);
-      connected = true;
-    }
-    else if (connected == true)
+    ICMPEchoReply echoReply = ping(server_addr, 4);
+    if (echoReply.status == SUCCESS)
     {
-      // Serial.print("Inserting : ");
-      //Serial.println(INSERT_SQL);
-      //Serial.println("Connection Successfull,inserting to database.");
-      my_conn.cmd_query(mycharp);
+      // timed out
+      timer += sqlInsertInterval;// reset timer by moving it along to the next interval
 
-    }
-    else {
-      //Serial.println("Connection failed.");
+      // inserting to sql database on mysql server
+      INSERT_SQL = "";
+      INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
+      INSERT_SQL.concat(tempInC);
+      INSERT_SQL.concat("');");
+
+      const char *mycharp = INSERT_SQL.c_str();
+      if (!connected) {
+        my_conn.mysql_connect(server_addr, 3306, user, password);
+        connected = true;
+      }
+      else if (connected == true)
+      {
+        Serial.print("Inserting : ");
+        Serial.println(INSERT_SQL);
+        Serial.println("Connection Successfull,inserting to database.");
+
+        my_conn.cmd_query(mycharp);
+
+      }
+      else {
+        Serial.println("Connection failed.");
+      }
     }
   }
+  //  {
+  //    sprintf(buffer, "MySQL Server not Reachable;");
+  //  }
+
 }
 
 // send the XML file containing analog value
