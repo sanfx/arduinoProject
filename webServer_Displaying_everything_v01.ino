@@ -45,6 +45,7 @@ const char htmlStyleMultiline[] PROGMEM = "<style>"
     "</style>";
 
 bool connected = false;
+bool wateringBasedOnAlarm = true;
 
 // Define the number of samples to keep track of.  The higher the number,
 // the more the readings will be smoothed, but the slower the output will
@@ -59,8 +60,6 @@ int readings[numReadings];      // the readings from the analog input
 int readIndex = 0;              // the index of the current reading
 int total = 0;                  // the running total
 int average = 0;                // the average
-
-
 
 /* Setup for the Connector/Arduino */
 Connector my_conn; // The Connector/Arduino reference
@@ -97,7 +96,7 @@ int result;
 
 // Initialize the Ethernet server library
 // with the IP address and port you want to use
-// (port 8090 is default for HTTP):
+// (port 8025 is default for HTTP):
 EthernetServer server(8025);
 
 char HTTP_req[REQ_BUF_SZ] = {0}; // buffered HTTP request stored as null terminated string
@@ -155,7 +154,9 @@ void setup() {
 
   tempSensor.begin();
   startEthernet();
+
   connected = my_conn.mysql_connect(server_addr, 3306, user, password);
+
   server.begin();
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
@@ -175,6 +176,37 @@ void startEthernet()
   delay(10);
   // Serial.print(F("connected. My IP is "));
   // Serial.println(Ethernet.localIP());
+}
+
+bool waterThePlant()
+{
+  int hour = 0;
+  int minute = 0;
+  hour = util::getHour();
+  minute = util::getMinute();
+//  Serial.print(hour);
+//  Serial.print(" ");
+//  Serial.println(minute);
+  if ((hour  == 16 || hour == 8) and (minute == 10)) {
+    digitalWrite(solenoidPin, HIGH);
+    power_to_solenoid = true;
+    return power_to_solenoid;
+  } else {
+    // set to false which is also the default state set in beginning.
+    digitalWrite(solenoidPin, LOW);
+    power_to_solenoid = false;
+    return power_to_solenoid;
+  }
+
+}
+
+// send the XML file containing analog value
+void outputJson(EthernetClient client)
+{
+  client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
+  client.print(tempInC);
+  client.print("\"}]}");
+  client.println();
 }
 
 void loop()
@@ -231,67 +263,73 @@ void loop()
   // Serial.print(F(", Soil Moisture: "));
   // Serial.println(val);
 
-  if (val < DRY_SOIL_DEFAULT ) {
-    power_to_solenoid = true;
-    soilMsg = F("Soil is dry");
-  } else soilMsg = F("Soil is damp.");
+  wateringBasedOnAlarm = waterThePlant();
+
+  // if not time to water plant check soil moisture
+  if (!wateringBasedOnAlarm) {
 
 
-  if (rainSenseReading < 500)  {
-    rainMsg = F("It is raining heavily !");
-    power_to_solenoid = false;
-  }
-  if (rainSenseReading < 300) {
-    rainMsg = F("Moderate rain.");
-    power_to_solenoid = false;
-    soilMsg = F("Watering plant is turned off when it is raining.");
-  }
-  if (rainSenseReading < 200) {
-    rainMsg = F("Light Rain Showers !");
-    power_to_solenoid = false;
-    soilMsg = F("Watering plant is turned off when it is raining.");
-  }
-  if (rainSenseReading > 500) {
-    rainMsg = F("Not Raining.");
-    power_to_solenoid = true;
-  }
-  else power_to_solenoid = false;
-  int hr = util::getHour();
-  // Do not water plant at night
-  if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
-    power_to_solenoid = false;
-    soilMsg = ". Watering plant is turned off at night.";
-  }
-  if (watrLvlSnsr >= 400) {
-    power_to_solenoid = false;
-  }
-  // Turn on Solenoid Valve if soil moisture value less than 25
-  if (power_to_solenoid == true)
-  { // i.e. if onBoardLedState is HIGH
-    soilMsg = F("Soil is dry. ");
-    // do not water pot if its raining or if it is night.
-    if (analogValue > 300) {
-      soilMsg = soilMsg +  F("Watering the plant.");
-      // turn solenoid off after 45 sec
-      digitalWrite(solenoidPin, HIGH);
-      digitalWrite(buzzerout, HIGH);
+    if (val < DRY_SOIL_DEFAULT ) {
+      power_to_solenoid = true;
+      soilMsg = F("Soil is dry");
+    } else soilMsg = F("Soil is damp.");
+
+
+    if (rainSenseReading < 500)  {
+      rainMsg = F("It is raining heavily !");
+      power_to_solenoid = false;
     }
-    // if the Led is on, we must wait for the duration to expire before turning it off
-    if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
-      // time is up, so change the state to LOW
+    if (rainSenseReading < 300) {
+      rainMsg = F("Moderate rain.");
+      power_to_solenoid = false;
+      soilMsg = F("Watering plant is turned off when it is raining.");
+    }
+    if (rainSenseReading < 200) {
+      rainMsg = F("Light Rain Showers !");
+      power_to_solenoid = false;
+      soilMsg = F("Watering plant is turned off when it is raining.");
+    }
+    if (rainSenseReading > 500) {
+      rainMsg = F("Not Raining.");
+      power_to_solenoid = true;
+    }
+    else power_to_solenoid = false;
+    int hr = util::getHour();
+    // Do not water plant at night
+    if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
+      power_to_solenoid = false;
+      soilMsg = ". Watering plant is turned off at night.";
+    }
+    if (watrLvlSnsr >= 400) {
+      power_to_solenoid = false;
+    }
+    // Turn on Solenoid Valve if soil moisture value less than 25
+    if (power_to_solenoid == true)
+    { // i.e. if onBoardLedState is HIGH
+      soilMsg = F("Soil is dry. ");
+      // do not water pot if its raining or if it is night.
+      if (analogValue > 300) {
+        soilMsg = soilMsg +  F("Watering the plant.");
+        // turn solenoid off after 45 sec
+        digitalWrite(solenoidPin, HIGH);
+        digitalWrite(buzzerout, HIGH);
+      }
+      // if the Led is on, we must wait for the duration to expire before turning it off
+      if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
+        // time is up, so change the state to LOW
+        power_to_solenoid = false; // don't execute this again
+        digitalWrite(solenoidPin, LOW);
+        digitalWrite(buzzerout, LOW);
+      }
+      // and save the time when we made the change
+      previousOnBoardLedMillis += blinkDuration;
+    } else
+    {
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
       digitalWrite(buzzerout, LOW);
     }
-    // and save the time when we made the change
-    previousOnBoardLedMillis += blinkDuration;
-  } else
-  {
-    power_to_solenoid = false; // don't execute this again
-    digitalWrite(solenoidPin, LOW);
-    digitalWrite(buzzerout, LOW);
   }
-
   EthernetClient client = server.available();  // try to get client
 
   if (client) {  // got client?
@@ -315,7 +353,10 @@ void loop()
           // Ajax request - send XML file
           if (util::StrContains(HTTP_req, "json")) {
             // send rest of HTTP header
-            client.println("Content-Type: application/json;charset=utf-8");
+            // client.println("Content-Type: application/json;charset=utf-8");
+            client.println(F("Content-Type: text/html"));
+            client.println("Access-Control-Allow-Origin: *");
+            client.println("Keep-Alive: timeout=2, max=100");
             client.println("Connection: keep-alive");
             client.println();
             outputJson(client);
@@ -394,12 +435,10 @@ void loop()
             client.print(val);
             client.print(F("(averaged out of last 30 values) &nbsp;"));
             client.println(soilMsg);
+            if (wateringBasedOnAlarm){
+              client.println(F("Watering plant based on set alarm ."));
+            }
             client.println (F("</body></html>"));
-
-
-
-
-
           }
           // display received HTTP request on serial port
           Serial.print(HTTP_req);
@@ -426,80 +465,40 @@ void loop()
 
 
   // perform sql insert after 5 minutes
-  if ((millis() - timer) > sqlInsertInterval) {
-    ICMPEchoReply echoReply = ping(server_addr, 4);
-    if (echoReply.status == SUCCESS)
-    {
-      // timed out
-      timer += sqlInsertInterval;// reset timer by moving it along to the next interval
-
-      // inserting to sql database on mysql server
-      INSERT_SQL = "";
-      INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
-      INSERT_SQL.concat(tempInC);
-      INSERT_SQL.concat("');");
-
-      const char *mycharp = INSERT_SQL.c_str();
-      if (!connected) {
-        my_conn.mysql_connect(server_addr, 3306, user, password);
-        connected = true;
-      }
-      else if (connected == true)
-      {
-        Serial.print("Inserting : ");
-        Serial.println(INSERT_SQL);
-        Serial.println("Connection Successfull,inserting to database.");
-
-        my_conn.cmd_query(mycharp);
-
-      }
-      else {
-        Serial.println("Connection failed.");
-      }
-    }
-  }
-  //  {
-  //    sprintf(buffer, "MySQL Server not Reachable;");
+  //  if ((millis() - timer) > sqlInsertInterval) {
+  //    ICMPEchoReply echoReply = ping(server_addr, 4);
+  //    if (echoReply.status == SUCCESS)
+  //    {
+  //      // timed out
+  //      timer += sqlInsertInterval;// reset timer by moving it along to the next interval
+  //
+  //      // inserting to sql database on mysql server
+  //      INSERT_SQL = "";
+  //      INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
+  //      INSERT_SQL.concat(tempInC);
+  //      INSERT_SQL.concat("');");
+  //
+  //      const char *mycharp = INSERT_SQL.c_str();
+  //      if (!connected) {
+  //        my_conn.mysql_connect(server_addr, 3306, user, password);
+  //        connected = true;
+  //
+  //      }
+  //      else if (connected == true)
+  //      {
+  //        Serial.print("Inserting : ");
+  //        Serial.println(INSERT_SQL);
+  //        Serial.println("Connection Successfull,inserting to database.");
+  //
+  //        my_conn.cmd_query(mycharp);
+  //
+  //      }
+  //      else {
+  //        Serial.println("Connection failed.");
+  //      }
+  //    }
   //  }
 
+
 }
 
-// send the XML file containing analog value
-void outputJson(EthernetClient client)
-{
-  client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
-  client.print(tempInC);
-  client.print("\"}]}");
-  client.println();
-}
-
-
-// searches for the string sfind in the string str
-// returns 1 if string found
-// returns 0 if string not found
-char StrContains(char *str, char *sfind)
-{
-  char found = 0;
-  char index = 0;
-  char len;
-
-  len = strlen(str);
-
-  if (strlen(sfind) > len) {
-    return 0;
-  }
-  while (index < len) {
-    if (str[index] == sfind[found]) {
-      found++;
-      if (strlen(sfind) == found) {
-        return 1;
-      }
-    }
-    else {
-      found = 0;
-    }
-    index++;
-  }
-
-  return 0;
-}

@@ -5,7 +5,6 @@ namespace util
 {
 
 
-
 // sets every element of str to 0 (clears array)
 void StrClear(char *str, char length)
 {
@@ -63,8 +62,6 @@ byte bcdToDec(byte val)
   return ( (val / 16 * 10) + (val % 16) );
 }
 
-
-
 void readDS3231time(byte *second,
                     byte *minute,
                     byte *hour,
@@ -86,9 +83,6 @@ void readDS3231time(byte *second,
   *month = bcdToDec(Wire.read());
   *year = bcdToDec(Wire.read());
 }
-
-
-
 
 double* getTempHumdata(const int sensorPin)
 {
