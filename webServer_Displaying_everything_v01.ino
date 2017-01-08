@@ -139,7 +139,7 @@ double hIinCel;
 String soilMsg;
 
 // the interval in mS
-unsigned long interval = 10000; // the time we need to wait
+unsigned long interval = 10000; // the time we need to wait to finish watering the plant.
 
 void setup() {
   Wire.begin();
@@ -185,9 +185,7 @@ bool waterThePlant()
   int minute = 0;
   hour = util::getHour();
   minute = util::getMinute();
-  //  Serial.print(hour);
-  //  Serial.print(" ");
-  //  Serial.println(minute);
+
   if ((hour  == 16 || hour == 8) and (minute == 10)) {
     digitalWrite(solenoidPin, HIGH);
     power_to_solenoid = true;
@@ -265,7 +263,7 @@ void loop()
   if (!wateringBasedOnAlarm) {
     if (val < DRY_SOIL_DEFAULT ) {
       power_to_solenoid = true;
-      soilMsg = F("Soil is dry");
+      soilMsg = F("Soil is dry.");
     } else soilMsg = F("Soil is damp.");
 
 
@@ -319,6 +317,7 @@ void loop()
       previousOnBoardLedMillis += blinkDuration;
     } else
     {
+      soilMsg = F("Soil is damp. ");
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
       digitalWrite(buzzerout, LOW);
@@ -361,6 +360,16 @@ void loop()
             client.println("Connection: keep-alive");
             client.println();
             outputJson(client);
+          }else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
+            client.println(F("Content-Type: text/html"));
+            client.println("Access-Control-Allow-Origin: *");
+            client.println(F("Connection: close")); 
+            client.println();
+            client.println(F("<!DOCTYPE HTML>"));
+            client.println(F("<html><head><title>"));
+            client.println(F("Welcome to Arduino WebServer</title>"));
+            client.println("<meta http-equiv='refresh' content='0; url=../'>");
+            client.println(F("</head><body></body></html>"));
           }
           else {  // web page request
             // send rest of HTTP header
