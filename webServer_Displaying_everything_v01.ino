@@ -54,7 +54,7 @@ bool wateringBasedOnAlarm = true;
 const int numReadings = 30;
 
 // if val of soil moisture is greater than 30 turn on solenoid
-const int8_t DRY_SOIL_DEFAULT = 40;
+const int8_t DRY_SOIL_DEFAULT = 30;
 
 int readings[numReadings];      // the readings from the analog input
 int readIndex = 0;              // the index of the current reading
@@ -93,7 +93,7 @@ EthernetClient client;
 
 String data;
 int result;
-
+String readString;
 // Initialize the Ethernet server library
 // with the IP address and port you want to use
 // (port 8025 is default for HTTP):
@@ -107,6 +107,7 @@ String rainMsg;
 unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
 
 unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
+unsigned long previousMillis = 0; // millis() returns an unsigned long.
 unsigned long timer = 0; // timer for sql insert after 5 minutes
 unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
 const int blinkDuration = 5000; // number of millisecs that Led's are on - all three leds use this
@@ -138,7 +139,7 @@ double hIinCel;
 String soilMsg;
 
 // the interval in mS
-#define interval 45000
+unsigned long interval = 10000; // the time we need to wait
 
 void setup() {
   Wire.begin();
@@ -184,9 +185,9 @@ bool waterThePlant()
   int minute = 0;
   hour = util::getHour();
   minute = util::getMinute();
-//  Serial.print(hour);
-//  Serial.print(" ");
-//  Serial.println(minute);
+  //  Serial.print(hour);
+  //  Serial.print(" ");
+  //  Serial.println(minute);
   if ((hour  == 16 || hour == 8) and (minute == 10)) {
     digitalWrite(solenoidPin, HIGH);
     power_to_solenoid = true;
@@ -220,8 +221,6 @@ void loop()
   // read from the sensor:
   val = analogRead(SENSE);
   readings[readIndex] =  val / 10;
-  //Serial.print("Readings from Soil Sensor: ");
-  //Serial.println(val / 10); // for debugging to be removed after done testing
   // add the reading to the total:
   total = total + readings[readIndex];
   // advance to the next position in the array:
@@ -235,9 +234,6 @@ void loop()
 
   // calculate the average:
   val = total / numReadings;
-
-  // Serial.print("Average Soil Sensor Reading: ");
-  //Serial.println(val);// for debugging to be removed after done testing
 
   int rainSenseReading = analogRead(rainsense);
 
@@ -267,8 +263,6 @@ void loop()
 
   // if not time to water plant check soil moisture
   if (!wateringBasedOnAlarm) {
-
-
     if (val < DRY_SOIL_DEFAULT ) {
       power_to_solenoid = true;
       soilMsg = F("Soil is dry");
@@ -343,6 +337,13 @@ void loop()
           HTTP_req[req_index] = c;          // save HTTP request character
           req_index++;
         }
+
+        //read char by char HTTP request
+        if (readString.length() < 100) {
+          //store characters to string
+          readString += c;
+        }
+
         // last line of client request is blank and ends with \n
         // respond to client only after last line received
         if (c == '\n' && currentLineIsBlank) {
@@ -373,6 +374,9 @@ void loop()
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><title>"));
             client.println(F("Welcome to Arduino WebServer</title>"));
+            client.println("<meta name='apple-mobile-web-app-capable' content='yes' />");
+            client.println("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />");
+            client.println("<!--link rel='stylesheet' type='text/css' href='http://randomnerdtutorials.com/ethernetcss.css' /-->");
             util::printProgStr(client, htmlStyleMultiline );
             client.println(F("</head><body style='background-color:grey'>"));
             client.println(c);
@@ -433,9 +437,9 @@ void loop()
             client.println(F("</span></div>"));
             client.print(F("<br>Pot Soil Moisture: "));
             client.print(val);
-            client.print(F("(averaged out of last 30 values) &nbsp;"));
+            client.print(F(" <a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
             client.println(soilMsg);
-            if (wateringBasedOnAlarm){
+            if (wateringBasedOnAlarm) {
               client.println(F("Watering plant based on set alarm ."));
             }
             client.println (F("</body></html>"));
@@ -461,8 +465,21 @@ void loop()
     } // end while (client.connected())
     delay(1);      // give the web browser time to receive the data
     client.stop(); // close the connection
+
   } // end if (client)
 
+  //controls the Arduino if you press the buttons
+  if (readString.indexOf("/?waterPlant1") > 0) {
+    // check if "interval" time has passed (1000 milliseconds)
+    digitalWrite(solenoidPin, HIGH); // sets the solenoid power based on power_to_solenoid
+  }
+
+  if ((unsigned long)(currentMillis - previousMillis) >= interval) {
+    //clearing string for next read
+    readString = "";
+    // save the "current" time
+    previousMillis = millis();
+  }
 
   // perform sql insert after 5 minutes
   //  if ((millis() - timer) > sqlInsertInterval) {
