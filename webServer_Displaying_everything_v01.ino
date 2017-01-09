@@ -106,8 +106,6 @@ char req_index = 0;              // index into HTTP_req buffer
 String rainMsg;
 unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
 
-unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
-unsigned long previousMillis = 0; // millis() returns an unsigned long.
 unsigned long timer = 0; // timer for sql insert after 5 minutes
 unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
 const int blinkDuration = 5000; // number of millisecs that Led's are on - all three leds use this
@@ -140,6 +138,8 @@ String soilMsg;
 
 // the interval in mS
 unsigned long interval = 10000; // the time we need to wait to finish watering the plant.
+unsigned long currentMillis = 0;    // stores the value of millis() in each iteration of loop()
+unsigned long previousMillis = 0; // millis() returns an unsigned long.
 
 void setup() {
   Wire.begin();
@@ -156,7 +156,7 @@ void setup() {
   tempSensor.begin();
   startEthernet();
 
-  connected = my_conn.mysql_connect(server_addr, 3306, user, password);
+  // connected = my_conn.mysql_connect(server_addr, 3306, user, password);
 
   server.begin();
   // Open serial communications and wait for port to open:
@@ -190,7 +190,17 @@ bool waterThePlant()
     digitalWrite(solenoidPin, HIGH);
     power_to_solenoid = true;
     return power_to_solenoid;
-  } else {
+  } 
+  // turn of solenoid after 10 seconds set by interval variable.
+  else if (wateringBasedOnAlarm == false)
+  {
+    digitalWrite(solenoidPin, LOW);
+    power_to_solenoid = false;
+    return power_to_solenoid;
+    
+  }else
+  
+  {
     // set to false which is also the default state set in beginning.
     digitalWrite(solenoidPin, LOW);
     power_to_solenoid = false;
@@ -454,7 +464,7 @@ void loop()
             client.println (F("</body></html>"));
           }
           // display received HTTP request on serial port
-          Serial.print(HTTP_req);
+          //Serial.print(HTTP_req);
           // reset buffer index and all buffer elements to 0
           req_index = 0;
           util::StrClear(HTTP_req, REQ_BUF_SZ);
@@ -486,6 +496,7 @@ void loop()
   if ((unsigned long)(currentMillis - previousMillis) >= interval) {
     //clearing string for next read
     readString = "";
+    wateringBasedOnAlarm = false;
     // save the "current" time
     previousMillis = millis();
   }
