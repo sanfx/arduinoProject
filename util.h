@@ -192,13 +192,24 @@ void displayTime(EthernetClient client)
 
 }
 
+int* getTime(size_t& arraySize)
+{
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  // retrieve data from DS3231
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+                       &year);
+
+    int time[] = {hour, minute, second};
+    return time;
+}
+
 
 
 int getHour()
 {
   byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
   // retrieve data from DS3231
-  util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
                        &year);
   return hour;
 }
@@ -208,7 +219,7 @@ int getMinute()
 {
   byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
   // retrieve data from DS3231
-  util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+  readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
                        &year);
   return minute;
 }

@@ -112,10 +112,14 @@ const int blinkDuration = 5000; // number of millisecs that Led's are on - all t
 const int onBoardLedInterval = 5000; // number of millisecs between blinks
 
 // ///////////// PIN Setup /////////////////
+const int buttonPin = 3;
+int flag = 0;
+int buttonState = 0;
 const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we are using
+
 #define DHT11_PIN 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
 const int8_t rainsense = 0; // analog sensor input pin A0
-const int buzzerout = 2; // digital output pin D2 - buzzer output
+const int buzzerout = 4; // digital output pin D2 - buzzer output
 const int8_t pwatLvlSense = A2; // Pot Water Level Sensor A2 connected with blue wire
 int SENSE = 1; // Soil Sensor input at Analog PIN A1 Green wire
 int val = 0;
@@ -144,6 +148,7 @@ unsigned long previousMillis = 0; // millis() returns an unsigned long.
 void setup() {
   Wire.begin();
   power_to_solenoid = false;
+  pinMode(buttonPin, INPUT_PULLUP);
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
   pinMode(buzzerout, OUTPUT);
   pinMode(rainsense, INPUT);
@@ -181,25 +186,27 @@ void startEthernet()
 
 bool waterThePlant()
 {
-  int hour = 0;
-  int minute = 0;
-  hour = util::getHour();
-  minute = util::getMinute();
 
-  if ((hour  == 16 || hour == 8) and (minute == 10)) {
+  byte second, minute, hour, dayOfWeek, dayOfMonth, month, year;
+  util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
+                       &year);
+
+  if ((hour  == 16 || hour == 8) and (minute == 10) and (second <= 10) ) {
     digitalWrite(solenoidPin, HIGH);
+    digitalWrite(buzzerout, HIGH);
     power_to_solenoid = true;
     return power_to_solenoid;
-  } 
+  }
   // turn of solenoid after 10 seconds set by interval variable.
   else if (wateringBasedOnAlarm == false)
   {
     digitalWrite(solenoidPin, LOW);
+    digitalWrite(buzzerout, LOW);
     power_to_solenoid = false;
     return power_to_solenoid;
-    
-  }else
-  
+
+  } else
+
   {
     // set to false which is also the default state set in beginning.
     digitalWrite(solenoidPin, LOW);
@@ -220,6 +227,7 @@ void outputJson(EthernetClient client)
 
 void loop()
 {
+  buttonState = digitalRead(buttonPin);
   currentMillis = millis();   // capture the latest value of millis()
 
   int watrLvlSnsr = analogRead(pwatLvlSense);
@@ -333,6 +341,21 @@ void loop()
       digitalWrite(buzzerout, LOW);
     }
   }
+  //If button pressed...
+  if (buttonState == LOW) {
+    //...ones, turn led on!
+    if ( flag == 0) {
+      digitalWrite(solenoidPin, HIGH);
+      digitalWrite(buzzerout, HIGH);
+      flag = 1; //change flag variable
+    }
+    //...twice, turn led off!
+    else if ( flag == 1) {
+      digitalWrite(solenoidPin, LOW);
+      digitalWrite(buzzerout, LOW);
+      flag = 0; //change flag variable again
+    }
+  }
   EthernetClient client = server.available();  // try to get client
 
   if (client) {  // got client?
@@ -370,10 +393,10 @@ void loop()
             client.println("Connection: keep-alive");
             client.println();
             outputJson(client);
-          }else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
+          } else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
             client.println(F("Content-Type: text/html"));
             client.println("Access-Control-Allow-Origin: *");
-            client.println(F("Connection: close")); 
+            client.println(F("Connection: close"));
             client.println();
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><title>"));
@@ -497,6 +520,7 @@ void loop()
     //clearing string for next read
     readString = "";
     wateringBasedOnAlarm = false;
+    flag = 0; //change flag variable again
     // save the "current" time
     previousMillis = millis();
   }
