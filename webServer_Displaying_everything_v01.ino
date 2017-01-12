@@ -4,18 +4,25 @@
 #include "Wire.h"
 #define DS3231_I2C_ADDRESS 0x68
 #include <Ethernet.h>
-#include <ICMPPing.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
+//#include <ICMPPing.h>
+//#include <OneWire.h>
+//#include <DallasTemperature.h>
 #include "Dewpnt_heatIndx.h"
 #include "util.h"
-#include <dht.h>
-dht DHT;
+#include "DHT.h"
+
+#define DHTPIN 4
+#define DHTTYPE DHT22   // DHT 22  (AM2302)
+
+// Initialize DHT sensor for normal 16mhz Arduino
+DHT dht(DHTPIN, DHTTYPE);
+
+
 
 //  ping server socket
-SOCKET pingSocket = 0;
-char buffer [256];
-ICMPPing ping(pingSocket, (uint16_t)random(0, 255));
+//SOCKET pingSocket = 0;
+//char buffer [256];
+//ICMPPing ping(pingSocket, (uint16_t)random(0, 255));
 
 
 const char htmlStyleMultiline[] PROGMEM = "<style>"
@@ -70,13 +77,6 @@ String INSERT_SQL = "";
 
 bool power_to_solenoid = false;
 
-#define ONE_WIRE_BUS 42 /*-(Connect to Pin 42 )- brown wire out on potentiometer*/
-/* Set up a oneWire instance to communicate with any OneWire device*/
-OneWire ourWire(ONE_WIRE_BUS);
-
-/* Tell Dallas Temperature Library to use oneWire Library */
-DallasTemperature tempSensor(&ourWire);
-
 int mint = 0;
 
 // size of buffer used to capture HTTP requests
@@ -119,7 +119,7 @@ const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we a
 
 #define DHT11_PIN 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
 const int8_t rainsense = 0; // analog sensor input pin A0
-const int buzzerout = 4; // digital output pin D2 - buzzer output
+//const int buzzerout = 4; // digital output pin D2 - buzzer output
 const int8_t pwatLvlSense = A2; // Pot Water Level Sensor A2 connected with blue wire
 int SENSE = 1; // Soil Sensor input at Analog PIN A1 Green wire
 int val = 0;
@@ -127,16 +127,17 @@ int val = 0;
 int lightSensorPin = 3; // A3, earlier it was A8
 int analogValue = 0;
 
-double tempInC;
-double indorTempinC;
-double indorTempInF;
+float tempInC;
+float indorTempinC;
+float indorTempinF;
 int humidity;
 float dP; // dew point
 float dPF; // dew point in fahrenheit
 float tF; // temperature in fahrenheit
-
-double hIinFah;
-double hIinCel;
+float hi; // heat index in fahrenheit of indoor
+float h;  // humidity of indoor
+float hIinFah;
+float hIinCel;  // heat index in celcius of indoor
 
 String soilMsg;
 
@@ -146,11 +147,16 @@ unsigned long currentMillis = 0;    // stores the value of millis() in each iter
 unsigned long previousMillis = 0; // millis() returns an unsigned long.
 
 void setup() {
+  // begin Realtime clock module
   Wire.begin();
+  // to set the initial time here:
+  // DS3231 seconds, minutes, hours, day, date, month, year
+  //  util::setDS3231time(23, 20, 23, 5, 12, 1, 17); // India Time is set
+  dht.begin();
   power_to_solenoid = false;
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
-  pinMode(buzzerout, OUTPUT);
+  //  pinMode(buzzerout, OUTPUT);
   pinMode(rainsense, INPUT);
 
   // initialize all the readings to 0:
@@ -158,7 +164,7 @@ void setup() {
     readings[thisReading] = 0;
   }
 
-  tempSensor.begin();
+  //  tempSensor.begin();
   startEthernet();
 
   // connected = my_conn.mysql_connect(server_addr, 3306, user, password);
@@ -193,7 +199,7 @@ bool waterThePlant()
 
   if ((hour  == 16 || hour == 8) and (minute == 10) and (second <= 10) ) {
     digitalWrite(solenoidPin, HIGH);
-    digitalWrite(buzzerout, HIGH);
+    //    digitalWrite(buzzerout, HIGH);
     power_to_solenoid = true;
     return power_to_solenoid;
   }
@@ -201,7 +207,7 @@ bool waterThePlant()
   else if (wateringBasedOnAlarm == false)
   {
     digitalWrite(solenoidPin, LOW);
-    digitalWrite(buzzerout, LOW);
+    //    digitalWrite(buzzerout, LOW);
     power_to_solenoid = false;
     return power_to_solenoid;
 
@@ -221,12 +227,27 @@ void outputJson(EthernetClient client)
 {
   client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
   client.print(tempInC);
+  client.print("\"}, {\"location\":\"indoor\",\"celsius\":\"");
+  client.print(indorTempinC);
   client.print("\"}]}");
   client.println();
 }
 
 void loop()
 {
+  // Reading temperature or humidity takes about 250 milliseconds!
+  delay(250);
+
+  // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  h = dht.readHumidity();
+  // Read temperature as Celsius
+  indorTempinC = dht.readTemperature();
+  // Read temperature as Fahrenheit
+  indorTempinF = dht.readTemperature(true);
+  // Compute heat index
+  // Must send in temp in Fahrenheit!
+  hi = dht.computeHeatIndex(indorTempinF, h);
+
   buttonState = digitalRead(buttonPin);
   currentMillis = millis();   // capture the latest value of millis()
 
@@ -253,18 +274,8 @@ void loop()
 
   int rainSenseReading = analogRead(rainsense);
 
-  //  tempInC = util::getTempHumdata(DHT11_PIN)[0];
-  //  humidity = util::getTempHumdata(DHT11_PIN)[1];
-  delay(200); // 2 seconds stop for DHT to read
-  //  int chk = DHT.read11(DHT11_PIN);
-  tempSensor.requestTemperatures(); // Send the command to get temperatures
-  tempInC = tempSensor.getTempCByIndex(0);
-  tF = tempSensor.getTempFByIndex(0);
-  //  humidity = DHT.humidity;
-  //  indorTempinC = DHT.temperature;
-  //  indorTempInF = (indorTempinC * 9.0) / 5.0 + 32;
-  //  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, humidity));
-  //  dPF = ((dP * 9) / 5) + 32;
+  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, h));
+  dPF = ((dP * 9) / 5) + 32;
 
   analogValue = analogRead(lightSensorPin);
   // Serial.print(F("LDR value: "));
@@ -322,14 +333,14 @@ void loop()
         soilMsg = soilMsg +  F("Watering the plant.");
         // turn solenoid off after 45 sec
         digitalWrite(solenoidPin, HIGH);
-        digitalWrite(buzzerout, HIGH);
+        //        digitalWrite(buzzerout, HIGH);
       }
       // if the Led is on, we must wait for the duration to expire before turning it off
       if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
         // time is up, so change the state to LOW
         power_to_solenoid = false; // don't execute this again
         digitalWrite(solenoidPin, LOW);
-        digitalWrite(buzzerout, LOW);
+        //        digitalWrite(buzzerout, LOW);
       }
       // and save the time when we made the change
       previousOnBoardLedMillis += blinkDuration;
@@ -338,24 +349,26 @@ void loop()
       soilMsg = F("Soil is damp. ");
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
-      digitalWrite(buzzerout, LOW);
+      //      digitalWrite(buzzerout, LOW);
     }
   }
   //If button pressed...
   if (buttonState == LOW) {
-    //...ones, turn led on!
+    Serial.println(buttonState, DEC);
+    //...ones, turn solenoid on!
     if ( flag == 0) {
       digitalWrite(solenoidPin, HIGH);
-      digitalWrite(buzzerout, HIGH);
+      //      digitalWrite(buzzerout, HIGH);
       flag = 1; //change flag variable
     }
-    //...twice, turn led off!
+    //...twice, turn solenoid off!
     else if ( flag == 1) {
       digitalWrite(solenoidPin, LOW);
-      digitalWrite(buzzerout, LOW);
+      //      digitalWrite(buzzerout, LOW);
       flag = 0; //change flag variable again
     }
   }
+
   EthernetClient client = server.available();  // try to get client
 
   if (client) {  // got client?
@@ -430,36 +443,28 @@ void loop()
               client.println(rainSenseReading);
             }
 
-            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
-            client.print(tempInC, 1);
-            client.print(F("&#8451; / "));
-            client.print(tF);
-            client.println(F(" &#8457;"));
-            //          client.print("<br>Indoor temperature: ");
-            //          client.print(indorTempinC);
-            //          client.print("&#8451;/ ");
-            //          client.println(indorTempInF);
-            //          client.println(F(" &#8457;, Humidity: "));
-            //
-            //          client.print(humidity, 1);
-            //          client.print(F("%<br>Dew Point: "));
-            //          client.print(dP);
-            //          client.print(F("&#8451; Heat Index: "));
-            //
-            //          if (tF < 70 || humidity < 30) {
-            //            client.print(tempInC);
-            //            client.print(F(" &#8451; / "));
+            //            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
+            //            client.print(tempInC, 1);
+            //            client.print(F("&#8451; / "));
             //            client.print(tF);
             //            client.println(F(" &#8457;"));
-            //          }
-            //          else {
-            //            hIinFah = Dewpnt_heatIndx::heatIndex(tF, humidity);
-            //            hIinCel = (hIinFah + 40) / 1.8 - 40;
-            //            client.print(hIinCel);
-            //            client.print(F(" &#8451;/ "));
-            //            client.print(hIinFah);
-            //            client.println(F(" &#8457; <br>"));
-            //          }
+            client.print("<br>Indoor temperature: ");
+            client.print(indorTempinC);
+            client.print("&#8451;/ ");
+            client.println(indorTempinF);
+            client.println(F(" &#8457;, Humidity: "));
+
+            client.print(h, 1);
+            client.print(F("%<br>Dew Point: "));
+            client.print(dP);
+            client.print(F("&#8451; Heat Index: "));
+
+            hIinCel = (hi + 40) / 1.8 - 40;
+            client.print(hIinCel);
+            client.print(F(" &#8451;/ "));
+            client.print(hi);
+            client.println(F(" &#8457; <br>"));
+
 
             if (analogValue < 10) {
               client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
