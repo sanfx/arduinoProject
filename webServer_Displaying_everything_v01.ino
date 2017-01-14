@@ -11,12 +11,13 @@
 #include "util.h"
 #include "DHT.h"
 
-#define DHTPIN 4
+#define DRNGROMDHTPIN 4
+#define OUTDOORDHTPIN 14
 #define DHTTYPE DHT22   // DHT 22  (AM2302)
 
 // Initialize DHT sensor for normal 16mhz Arduino
-DHT dht(DHTPIN, DHTTYPE);
-
+DHT dhtDrwRom(DRNGROMDHTPIN, DHTTYPE);
+DHT dhtOutdoor(OUTDOORDHTPIN, DHTTYPE);
 
 
 //  ping server socket
@@ -127,18 +128,6 @@ int val = 0;
 int lightSensorPin = 3; // A3, earlier it was A8
 int analogValue = 0;
 
-float tempInC;
-float indorTempinC;
-float indorTempinF;
-int humidity;
-float dP; // dew point
-float dPF; // dew point in fahrenheit
-float tF; // temperature in fahrenheit
-float hi; // heat index in fahrenheit of indoor
-float h;  // humidity of indoor
-float hIinFah;
-float hIinCel;  // heat index in celcius of indoor
-
 String soilMsg;
 
 // the interval in mS
@@ -152,7 +141,8 @@ void setup() {
   // to set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   //  util::setDS3231time(23, 20, 23, 5, 12, 1, 17); // India Time is set
-  dht.begin();
+  dhtDrwRom.begin();
+  dhtOutdoor.begin();
   power_to_solenoid = false;
   pinMode(buttonPin, INPUT_PULLUP);
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
@@ -164,7 +154,6 @@ void setup() {
     readings[thisReading] = 0;
   }
 
-  //  tempSensor.begin();
   startEthernet();
 
   // connected = my_conn.mysql_connect(server_addr, 3306, user, password);
@@ -222,31 +211,71 @@ bool waterThePlant()
 
 }
 
+float outdoorTempInC;
+float outdoorTempInF;
+int outoorHumidity;
+float outdoordP;
+float outdoordPF;
+float outdoorhi;
+float outdoorhIinFah;
+float outdoorhIinCel;
+
+float indorTempinC;
+float indorTempinF;
+int humidity;
+float dP; // dew point
+float dPF; // dew point in fahrenheit
+float tF; // temperature in fahrenheit
+float hi; // heat index in fahrenheit of indoor
+float h;  // humidity of indoor
+float hIinFah;
+float hIinCel;  // heat index in celcius of indoor
+
 // send the XML file containing analog value
-void outputJson(EthernetClient client)
+void outputJson(EthernetClient client, bool formatted=false)
 {
-  client.print("{\"arduino\":[{\"location\":\"outdoor\",\"celsius\":\"");
-  client.print(tempInC);
-  client.print("\"}, {\"location\":\"indoor\",\"celsius\":\"");
+  client.print("{\"arduino\" : [{\"location\" : \"outdoor\" , \"outdoorTempInC\" : \"");
+  client.print(outdoorTempInC);
+  client.print("\" , \"outdoorTempInF\" : \"");
+  client.print(outdoorTempInF);
+  client.print("\" , \"outoorHumidity\":\"");
+  client.print(outoorHumidity);
+  client.print("\"} , {\"location\" : \"drawingRoom\" , \"celsius\" : \"");
   client.print(indorTempinC);
+  client.print("\" , \"indorTempinF\" : \"");
+  client.print(indorTempinF);
+  client.print("\" , \"indoorHumidity\" : \"");
+  client.print(h);
   client.print("\"}]}");
   client.println();
 }
 
 void loop()
-{
+{ //
   // Reading temperature or humidity takes about 250 milliseconds!
   delay(250);
-
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  h = dht.readHumidity();
+  h = dhtDrwRom.readHumidity();
   // Read temperature as Celsius
-  indorTempinC = dht.readTemperature();
+  indorTempinC = dhtDrwRom.readTemperature();
   // Read temperature as Fahrenheit
-  indorTempinF = dht.readTemperature(true);
-  // Compute heat index
-  // Must send in temp in Fahrenheit!
-  hi = dht.computeHeatIndex(indorTempinF, h);
+  indorTempinF = dhtDrwRom.readTemperature(true);
+  // Compute heat index, Must send in temp in Fahrenheit!
+  hi = dhtDrwRom.computeHeatIndex(indorTempinF, h);
+
+  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, h));
+  dPF = ((dP * 9) / 5) + 32;
+
+  // outoor DHT sensor readings
+  outoorHumidity = dhtOutdoor.readHumidity();
+  // Read temperature as Celsius
+  outdoorTempInC = dhtOutdoor.readTemperature();
+  // Read temperature as Fahrenheit
+  outdoorTempInF = dhtOutdoor.readTemperature(true);
+  // Compute outdoor heat index, Must send in temp in Fahrenheit!
+  outdoorhIinFah = dhtOutdoor.computeHeatIndex(indorTempinF, h);
+  outdoordP = (Dewpnt_heatIndx::dewPointFast(outdoorTempInC, outoorHumidity));
+  outdoordPF = ((dP * 9) / 5) + 32;
 
   buttonState = digitalRead(buttonPin);
   currentMillis = millis();   // capture the latest value of millis()
@@ -273,9 +302,6 @@ void loop()
   val = total / numReadings;
 
   int rainSenseReading = analogRead(rainsense);
-
-  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, h));
-  dPF = ((dP * 9) / 5) + 32;
 
   analogValue = analogRead(lightSensorPin);
   // Serial.print(F("LDR value: "));
@@ -405,7 +431,7 @@ void loop()
             client.println("Keep-Alive: timeout=2, max=100");
             client.println("Connection: keep-alive");
             client.println();
-            outputJson(client);
+            outputJson(client, true);
           } else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
             client.println(F("Content-Type: text/html"));
             client.println("Access-Control-Allow-Origin: *");
@@ -423,8 +449,6 @@ void loop()
             client.println(F("Connection: close"));  // the connection will be closed after completion of the response
             client.println(F("Refresh: 1000"));  // refresh the page automatically every 60 sec
             client.println();
-            //            sentHeader = true;
-
 
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><title>"));
@@ -443,26 +467,38 @@ void loop()
               client.println(rainSenseReading);
             }
 
-            //            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
-            //            client.print(tempInC, 1);
-            //            client.print(F("&#8451; / "));
-            //            client.print(tF);
-            //            client.println(F(" &#8457;"));
+
+            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
+            client.print(outdoorTempInC, 1);
+            client.print(F("&#8451; / "));
+            client.print(outdoorTempInF);
+            client.println(F(" &#8457;"));
+            client.println(F(" &#8457;, Humidity: "));
+            client.print(outoorHumidity, 1);
+            client.print(F("%<br>Dew Point: "));
+            client.print(outdoordP);
+            client.print(F("&#8451; Heat Index: "));
+            outdoorhIinCel = (hi + 40) / 1.8 - 40;
+            client.print(outdoorhIinCel);
+            client.print(F(" &#8451;/ "));
+            client.print(outdoorhIinFah);
+            client.println(F(" &#8457; <br>"));
+
+ 
+            // --------------- Drawing Room ------------------//
             client.print("<br>Indoor temperature: ");
             client.print(indorTempinC);
             client.print("&#8451;/ ");
             client.println(indorTempinF);
             client.println(F(" &#8457;, Humidity: "));
-
             client.print(h, 1);
             client.print(F("%<br>Dew Point: "));
             client.print(dP);
             client.print(F("&#8451; Heat Index: "));
-
             hIinCel = (hi + 40) / 1.8 - 40;
             client.print(hIinCel);
             client.print(F(" &#8451;/ "));
-            client.print(hi);
+            client.print(outdoorhIinFah);
             client.println(F(" &#8457; <br>"));
 
 
@@ -541,7 +577,7 @@ void loop()
   //      // inserting to sql database on mysql server
   //      INSERT_SQL = "";
   //      INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
-  //      INSERT_SQL.concat(tempInC);
+  //      INSERT_SQL.concat(outdoorTempInC);
   //      INSERT_SQL.concat("');");
   //
   //      const char *mycharp = INSERT_SQL.c_str();
