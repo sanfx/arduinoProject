@@ -222,7 +222,7 @@ float outdoorhIinCel;
 
 float indorTempinC;
 float indorTempinF;
-int humidity;
+float humidity;
 float dP; // dew point
 float dPF; // dew point in fahrenheit
 float tF; // temperature in fahrenheit
@@ -234,17 +234,17 @@ float hIinCel;  // heat index in celcius of indoor
 // send the XML file containing analog value
 void outputJson(EthernetClient client, bool formatted=false)
 {
-  client.print("{\"arduino\" : [{\"location\" : \"outdoor\" , \"outdoorTempInC\" : \"");
+  client.print("{\"arduino\" : [{\"location\" : \"Outdoor\" , \"temperatureInC\" : \"");
   client.print(outdoorTempInC);
-  client.print("\" , \"outdoorTempInF\" : \"");
+  client.print("\" , \"temperatureInF\" : \"");
   client.print(outdoorTempInF);
-  client.print("\" , \"outoorHumidity\":\"");
+  client.print("\" , \"humidity\":\"");
   client.print(outoorHumidity);
-  client.print("\"} , {\"location\" : \"drawingRoom\" , \"celsius\" : \"");
+  client.print("\"} , {\"location\" : \"Drawing Room\" , \"temperatureInC\" : \"");
   client.print(indorTempinC);
-  client.print("\" , \"indorTempinF\" : \"");
+  client.print("\" , \"temperatureInF\" : \"");
   client.print(indorTempinF);
-  client.print("\" , \"indoorHumidity\" : \"");
+  client.print("\" , \"humidity\" : \"");
   client.print(h);
   client.print("\"}]}");
   client.println();
@@ -472,7 +472,6 @@ void loop()
             client.print(outdoorTempInC, 1);
             client.print(F("&#8451; / "));
             client.print(outdoorTempInF);
-            client.println(F(" &#8457;"));
             client.println(F(" &#8457;, Humidity: "));
             client.print(outoorHumidity, 1);
             client.print(F("%<br>Dew Point: "));
