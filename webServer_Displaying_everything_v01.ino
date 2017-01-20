@@ -124,6 +124,7 @@ const int8_t rainsense = 0; // analog sensor input pin A0
 const int8_t pwatLvlSense = A2; // Pot Water Level Sensor A2 connected with blue wire
 int SENSE = 1; // Soil Sensor input at Analog PIN A1 Green wire
 int val = 0;
+int avgVal = 0;
 
 int lightSensorPin = 3; // A3, earlier it was A8
 int analogValue = 0;
@@ -203,7 +204,7 @@ bool waterThePlant()
   } else
 
   {
-    // set to false which is also the default state set in beginning.
+    // explicitly set to false which is also the default state set in beginning.
     digitalWrite(solenoidPin, LOW);
     power_to_solenoid = false;
     return power_to_solenoid;
@@ -238,14 +239,33 @@ void outputJson(EthernetClient client, bool formatted=false)
   client.print(outdoorTempInC);
   client.print("\" , \"temperatureInF\" : \"");
   client.print(outdoorTempInF);
+  client.print("\" , \"dewPoint_in_Fahr\" : \"");
+  client.print(outdoordPF);
+  client.print("\" , \"dewPoint_in_Cel\" : \"");
+  client.print(outdoordP);
+  client.print("\" , \"heat_index__in_Fahr\" : \"");
+  client.print(outdoorhIinFah);
+  client.print("\" , \"heat_index_in_Cel\" : \"");
+  client.print(outdoorhIinCel);
   client.print("\" , \"humidity\":\"");
   client.print(outoorHumidity);
+ 
   client.print("\"} , {\"location\" : \"Drawing Room\" , \"temperatureInC\" : \"");
   client.print(indorTempinC);
   client.print("\" , \"temperatureInF\" : \"");
   client.print(indorTempinF);
+  client.print("\" , \"dewPoint_in_Fahr\" : \"");
+  client.print(dPF);
+  client.print("\" , \"dewPoint_in_Cel\" : \"");
+  client.print(dP);
+  client.print("\" , \"heat_index__in_Fahr\" : \"");
+  client.print(hi);
+  client.print("\" , \"heat_index_in_Cel\" : \"");
+  client.print(hIinCel);
   client.print("\" , \"humidity\" : \"");
   client.print(h);
+  client.print("\"}] , \"pots\" : [{\"pot1\" : \"");
+  client.print(val);
   client.print("\"}]}");
   client.println();
 }
@@ -262,7 +282,7 @@ void loop()
   indorTempinF = dhtDrwRom.readTemperature(true);
   // Compute heat index, Must send in temp in Fahrenheit!
   hi = dhtDrwRom.computeHeatIndex(indorTempinF, h);
-
+  hIinCel = (hi + 40) / 1.8 - 40;
   dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, h));
   dPF = ((dP * 9) / 5) + 32;
 
@@ -273,7 +293,8 @@ void loop()
   // Read temperature as Fahrenheit
   outdoorTempInF = dhtOutdoor.readTemperature(true);
   // Compute outdoor heat index, Must send in temp in Fahrenheit!
-  outdoorhIinFah = dhtOutdoor.computeHeatIndex(indorTempinF, h);
+  outdoorhIinFah = dhtOutdoor.computeHeatIndex(outdoorTempInF, h);
+  outdoorhIinCel = (outdoorhIinFah + 40) / 1.8 - 40;
   outdoordP = (Dewpnt_heatIndx::dewPointFast(outdoorTempInC, outoorHumidity));
   outdoordPF = ((dP * 9) / 5) + 32;
 
@@ -297,9 +318,9 @@ void loop()
     // ...wrap around to the beginning:
     readIndex = 0;
   }
-
+  
   // calculate the average:
-  val = total / numReadings;
+  avgVal = total / numReadings;
 
   int rainSenseReading = analogRead(rainsense);
 
@@ -477,7 +498,7 @@ void loop()
             client.print(F("%<br>Dew Point: "));
             client.print(outdoordP);
             client.print(F("&#8451; Heat Index: "));
-            outdoorhIinCel = (hi + 40) / 1.8 - 40;
+            
             client.print(outdoorhIinCel);
             client.print(F(" &#8451;/ "));
             client.print(outdoorhIinFah);
@@ -494,10 +515,9 @@ void loop()
             client.print(F("%<br>Dew Point: "));
             client.print(dP);
             client.print(F("&#8451; Heat Index: "));
-            hIinCel = (hi + 40) / 1.8 - 40;
             client.print(hIinCel);
             client.print(F(" &#8451;/ "));
-            client.print(outdoorhIinFah);
+            client.print(hi);
             client.println(F(" &#8457; <br>"));
 
 
@@ -519,7 +539,9 @@ void loop()
             client.println(F("</span></div>"));
             client.print(F("<br>Pot Soil Moisture: "));
             client.print(val);
-            client.print(F(" <a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
+            client.print(F(". Average Soil Moisture: "));
+            client.print(avgVal);
+            client.print(F("<br><a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
             client.println(soilMsg);
             if (wateringBasedOnAlarm) {
               client.println(F("Watering plant based on set alarm ."));
