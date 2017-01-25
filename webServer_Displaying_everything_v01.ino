@@ -75,7 +75,8 @@ Connector my_conn; // The Connector/Arduino reference
 char user[] = "arduino";
 char password[] = "arduino";
 String INSERT_SQL = "";
-
+//char INSERT_SQL[295];
+String waterMsg ="";
 bool power_to_solenoid = false;
 
 int mint = 0;
@@ -105,7 +106,7 @@ char req_index = 0;              // index into HTTP_req buffer
 
 
 String rainMsg;
-unsigned long sqlInsertInterval = 300000; // the repeat interval after 5 minutes
+unsigned long sqlInsertInterval = 1;
 
 unsigned long timer = 0; // timer for sql insert after 5 minutes
 unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
@@ -156,8 +157,8 @@ void setup() {
   }
 
   startEthernet();
-
-  // connected = my_conn.mysql_connect(server_addr, 3306, user, password);
+  // connect to mysql server
+  connected = my_conn.mysql_connect(server_addr, 3306, user, password);
 
   server.begin();
   // Open serial communications and wait for port to open:
@@ -176,8 +177,8 @@ void startEthernet()
   Ethernet.begin(mac, ip);
   // give the Ethernet shield a second to initialize:
   delay(10);
-  // Serial.print(F("connected. My IP is "));
-  // Serial.println(Ethernet.localIP());
+  Serial.print(F("connected. My IP is "));
+  Serial.println(Ethernet.localIP());
 }
 
 bool waterThePlant()
@@ -214,7 +215,7 @@ bool waterThePlant()
 
 float outdoorTempInC;
 float outdoorTempInF;
-int outoorHumidity;
+float outoorHumidity;
 float outdoordP;
 float outdoordPF;
 float outdoorhi;
@@ -232,7 +233,7 @@ float h;  // humidity of indoor
 float hIinFah;
 float hIinCel;  // heat index in celcius of indoor
 
-// send the XML file containing analog value
+// send the JSON containing analog value
 void outputJson(EthernetClient client, bool formatted=false)
 {
   client.print("{\"arduino\" : [{\"location\" : \"Outdoor\" , \"temperatureInC\" : \"");
@@ -252,6 +253,8 @@ void outputJson(EthernetClient client, bool formatted=false)
  
   client.print("\"} , {\"location\" : \"Drawing Room\" , \"temperatureInC\" : \"");
   client.print(indorTempinC);
+//  client.print("\" , \"localTime\" : \"");
+//  client.print(
   client.print("\" , \"temperatureInF\" : \"");
   client.print(indorTempinF);
   client.print("\" , \"dewPoint_in_Fahr\" : \"");
@@ -264,9 +267,11 @@ void outputJson(EthernetClient client, bool formatted=false)
   client.print(hIinCel);
   client.print("\" , \"humidity\" : \"");
   client.print(h);
-  client.print("\"}] , \"pots\" : [{\"pot1\" : \"");
+  client.print("\"}] , \"pots\" : [{\"soilMoist\" : \"");
   client.print(val);
-  client.print("\"}]}");
+  client.print("\", \"avgSoilMoist\" :\"");
+  client.print(avgVal);
+  client.print("\" }]}");
   client.println();
 }
 
@@ -337,39 +342,40 @@ void loop()
 
   // if not time to water plant check soil moisture
   if (!wateringBasedOnAlarm) {
-    if (val < DRY_SOIL_DEFAULT ) {
+    if (avgVal < DRY_SOIL_DEFAULT ) {
       power_to_solenoid = true;
-      soilMsg = F("Soil is dry.");
-    } else soilMsg = F("Soil is damp.");
+      soilMsg = F("Sensor detected, Soil is dry.");
+    } else soilMsg = F("Sensor detected, Soil is damp.");
 
 
-    if (rainSenseReading < 500)  {
-      rainMsg = F("It is raining heavily !");
-      power_to_solenoid = false;
-    }
-    if (rainSenseReading < 300) {
-      rainMsg = F("Moderate rain.");
-      power_to_solenoid = false;
-      soilMsg = F("Watering plant is turned off when it is raining.");
-    }
-    if (rainSenseReading < 200) {
-      rainMsg = F("Light Rain Showers !");
-      power_to_solenoid = false;
-      soilMsg = F("Watering plant is turned off when it is raining.");
-    }
-    if (rainSenseReading > 500) {
-      rainMsg = F("Not Raining.");
-      power_to_solenoid = true;
-    }
-    else power_to_solenoid = false;
+//    if (rainSenseReading < 500)  {
+//      rainMsg = F("It is raining heavily !");
+//      power_to_solenoid = false;
+//    }
+//    if (rainSenseReading < 300) {
+//      rainMsg = F("Moderate rain.");
+//      power_to_solenoid = false;
+//      soilMsg = F("Watering plant turned off when raining");
+//    }
+//    if (rainSenseReading < 200) {
+//      rainMsg = F("Light Rain Showers !");
+//      power_to_solenoid = false;
+//      soilMsg = F("Watering plant turned off when light rain showers");
+//    }
+//    if (rainSenseReading > 500) {
+//      rainMsg = F("Not Raining.");
+//      power_to_solenoid = true;
+//    }
+//    else power_to_solenoid = false;
     int hr = util::getHour();
     // Do not water plant at night
     if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
       power_to_solenoid = false;
-      soilMsg = ". Watering plant is turned off at night.";
+      soilMsg = "Watering plant turned off at night";
     }
     if (watrLvlSnsr >= 400) {
       power_to_solenoid = false;
+      soilMsg = "Pot full of water";
     }
     // Turn on Solenoid Valve if soil moisture value less than 25
     if (power_to_solenoid == true)
@@ -393,7 +399,7 @@ void loop()
       previousOnBoardLedMillis += blinkDuration;
     } else
     {
-      soilMsg = F("Soil is damp. ");
+//      soilMsg = F("Soil is damp..");
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
       //      digitalWrite(buzzerout, LOW);
@@ -444,7 +450,7 @@ void loop()
           // remainder of header follows below, depending on if
           // web page or XML page is requested
           // Ajax request - send XML file
-          if (util::StrContains(HTTP_req, "json")) {
+          if (util::StrContains(HTTP_req, "json") or util::StrContains(HTTP_req, "json?format=json")) {
             // send rest of HTTP header
             // client.println("Content-Type: application/json;charset=utf-8");
             client.println(F("Content-Type: text/html"));
@@ -454,6 +460,7 @@ void loop()
             client.println();
             outputJson(client, true);
           } else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
+            soilMsg = "Manual watering the plant";
             client.println(F("Content-Type: text/html"));
             client.println("Access-Control-Allow-Origin: *");
             client.println(F("Connection: close"));
@@ -473,7 +480,7 @@ void loop()
 
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><title>"));
-            client.println(F("Welcome to Arduino WebServer</title>"));
+            client.println(F("Welcome to Arduino Mega WebServer</title>"));
             client.println("<meta name='apple-mobile-web-app-capable' content='yes' />");
             client.println("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />");
             client.println("<!--link rel='stylesheet' type='text/css' href='http://randomnerdtutorials.com/ethernetcss.css' /-->");
@@ -588,39 +595,60 @@ void loop()
   }
 
   // perform sql insert after 5 minutes
-  //  if ((millis() - timer) > sqlInsertInterval) {
-  //    ICMPEchoReply echoReply = ping(server_addr, 4);
-  //    if (echoReply.status == SUCCESS)
-  //    {
-  //      // timed out
-  //      timer += sqlInsertInterval;// reset timer by moving it along to the next interval
-  //
-  //      // inserting to sql database on mysql server
-  //      INSERT_SQL = "";
-  //      INSERT_SQL.concat("INSERT INTO arduinoSensorData.outTempLog (out_temperature) VALUES ('");
-  //      INSERT_SQL.concat(outdoorTempInC);
-  //      INSERT_SQL.concat("');");
-  //
-  //      const char *mycharp = INSERT_SQL.c_str();
-  //      if (!connected) {
-  //        my_conn.mysql_connect(server_addr, 3306, user, password);
-  //        connected = true;
-  //
-  //      }
-  //      else if (connected == true)
-  //      {
-  //        Serial.print("Inserting : ");
-  //        Serial.println(INSERT_SQL);
-  //        Serial.println("Connection Successfull,inserting to database.");
-  //
-  //        my_conn.cmd_query(mycharp);
-  //
-  //      }
-  //      else {
-  //        Serial.println("Connection failed.");
-  //      }
-  //    }
-  //  }
+    if ((millis() - timer) > sqlInsertInterval) {
+//      ICMPEchoReply echoReply = ping(server_addr, 4);
+//      if (echoReply.status == SUCCESS)
+//      {
+        // timed out
+        timer += sqlInsertInterval;// reset timer by moving it along to the next interval
+  
+        // inserting to sql database on mysql server
+        INSERT_SQL = "";
+        INSERT_SQL.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
+        INSERT_SQL.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture,");
+        INSERT_SQL.concat(" wateringPot1) VALUES ('");
+        INSERT_SQL.concat(outdoorTempInC);
+        INSERT_SQL.concat("', '");
+        INSERT_SQL.concat(outoorHumidity);
+        INSERT_SQL.concat("', '");
+        INSERT_SQL.concat(indorTempinC);
+        INSERT_SQL.concat("', '");
+        INSERT_SQL.concat(h);
+        INSERT_SQL.concat("', '");
+        INSERT_SQL.concat(val);
+        INSERT_SQL.concat("', '");
+        INSERT_SQL.concat(avgVal);
+        INSERT_SQL.concat("', 'N/A");
+//        
+//        if (wateringBasedOnAlarm){
+//          waterMsg = "water based on alarm";
+//       
+//        } else waterMsg = soilMsg;
+//        INSERT_SQL.concat(waterMsg);
+        INSERT_SQL.concat("');");   
+//        Serial.println(INSERT_SQL);     
+
+        if (!connected) {
+          Serial.println("Establishing Connection");
+          my_conn.mysql_connect(server_addr, 3306, user, password);
+          connected = true;
+        }
+        else if (connected == true)
+        {
+          const char *mycharp = INSERT_SQL.c_str();
+//          my_conn.cmd_query("use arduinoSensorData;");
+          Serial.print("Inserting : ");
+          Serial.println(INSERT_SQL);
+          my_conn.cmd_query(mycharp);
+//           my_conn.cmd_query(INSERT_SQL);
+          Serial.println("Connection Successfull,inserting to database.");
+          sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
+        }
+        else {
+          Serial.println("Connection failed.");
+        }
+//      }
+    }
 
 
 }
