@@ -5,8 +5,7 @@
 #define DS3231_I2C_ADDRESS 0x68
 #include <Ethernet.h>
 //#include <ICMPPing.h>
-//#include <OneWire.h>
-//#include <DallasTemperature.h>
+
 #include "Dewpnt_heatIndx.h"
 #include "util.h"
 #include "DHT.h"
@@ -76,8 +75,7 @@ char user[] = "arduino";
 char password[] = "arduino";
 String INSERT_SQL = "";
 //char INSERT_SQL[295];
-String waterMsg ="";
-bool power_to_solenoid = false;
+String waterMsg = "";
 
 int mint = 0;
 
@@ -118,12 +116,14 @@ const int buttonPin = 3;
 int flag = 0;
 int buttonState = 0;
 const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we are using
-
-#define DHT11_PIN 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
+bool soilSensorState = LOW;
+#define power_soilMoist_pin 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
 const int8_t rainsense = 0; // analog sensor input pin A0
 //const int buzzerout = 4; // digital output pin D2 - buzzer output
 const int8_t pwatLvlSense = A2; // Pot Water Level Sensor A2 connected with blue wire
-int SENSE = 1; // Soil Sensor input at Analog PIN A1 Green wire
+int SENSE = A1; // Soil Sensor input at Analog PIN A1 Green wire
+bool power_to_solenoid = false;
+
 int val = 0;
 int avgVal = 0;
 
@@ -147,8 +147,12 @@ void setup() {
   dhtOutdoor.begin();
   power_to_solenoid = false;
   pinMode(buttonPin, INPUT_PULLUP);
+  pinMode(SENSE, INPUT);
+  pinMode(power_to_solenoid, OUTPUT);
+  digitalWrite(power_to_solenoid, LOW);
+
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
-  //  pinMode(buzzerout, OUTPUT);
+
   pinMode(rainsense, INPUT);
 
   // initialize all the readings to 0:
@@ -190,7 +194,6 @@ bool waterThePlant()
 
   if ((hour  == 16 || hour == 8) and (minute == 10) and (second <= 10) ) {
     digitalWrite(solenoidPin, HIGH);
-    //    digitalWrite(buzzerout, HIGH);
     power_to_solenoid = true;
     return power_to_solenoid;
   }
@@ -198,7 +201,6 @@ bool waterThePlant()
   else if (wateringBasedOnAlarm == false)
   {
     digitalWrite(solenoidPin, LOW);
-    //    digitalWrite(buzzerout, LOW);
     power_to_solenoid = false;
     return power_to_solenoid;
 
@@ -234,7 +236,7 @@ float hIinFah;
 float hIinCel;  // heat index in celcius of indoor
 
 // send the JSON containing analog value
-void outputJson(EthernetClient client, bool formatted=false)
+void outputJson(EthernetClient client, bool formatted = false)
 {
   client.print("{\"arduino\" : [{\"location\" : \"Outdoor\" , \"temperatureInC\" : \"");
   client.print(outdoorTempInC);
@@ -250,11 +252,11 @@ void outputJson(EthernetClient client, bool formatted=false)
   client.print(outdoorhIinCel);
   client.print("\" , \"humidity\":\"");
   client.print(outoorHumidity);
- 
+
   client.print("\"} , {\"location\" : \"Drawing Room\" , \"temperatureInC\" : \"");
   client.print(indorTempinC);
-//  client.print("\" , \"localTime\" : \"");
-//  client.print(
+  //  client.print("\" , \"localTime\" : \"");
+  //  client.print(
   client.print("\" , \"temperatureInF\" : \"");
   client.print(indorTempinF);
   client.print("\" , \"dewPoint_in_Fahr\" : \"");
@@ -277,6 +279,7 @@ void outputJson(EthernetClient client, bool formatted=false)
 
 void loop()
 { //
+
   // Reading temperature or humidity takes about 250 milliseconds!
   delay(250);
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -308,33 +311,8 @@ void loop()
 
   int watrLvlSnsr = analogRead(pwatLvlSense);
 
-  // subtract the last reading:
-  total = total - readings[readIndex];
-  // read from the sensor:
-  val = analogRead(SENSE);
-  readings[readIndex] =  val / 10;
-  // add the reading to the total:
-  total = total + readings[readIndex];
-  // advance to the next position in the array:
-  readIndex = readIndex + 1;
-
-  // if we're at the end of the array...
-  if (readIndex >= numReadings) {
-    // ...wrap around to the beginning:
-    readIndex = 0;
-  }
-  
-  // calculate the average:
-  avgVal = total / numReadings;
-
   int rainSenseReading = analogRead(rainsense);
 
-  analogValue = analogRead(lightSensorPin);
-  // Serial.print(F("LDR value: "));
-  // Serial.print(analogValue);
-  //  digitalWrite (redLedPin, analogValue < 55) ;
-  //  digitalWrite (yellowLedPin, analogValue >= 55 && analogValue <= 100) ;
-  //  digitalWrite (greenLedPin, analogValue > 100) ;
   // Serial.print(F(", Soil Moisture: "));
   // Serial.println(val);
 
@@ -348,61 +326,53 @@ void loop()
     } else soilMsg = F("Sensor detected, Soil is damp.");
 
 
-//    if (rainSenseReading < 500)  {
-//      rainMsg = F("It is raining heavily !");
-//      power_to_solenoid = false;
-//    }
-//    if (rainSenseReading < 300) {
-//      rainMsg = F("Moderate rain.");
-//      power_to_solenoid = false;
-//      soilMsg = F("Watering plant turned off when raining");
-//    }
-//    if (rainSenseReading < 200) {
-//      rainMsg = F("Light Rain Showers !");
-//      power_to_solenoid = false;
-//      soilMsg = F("Watering plant turned off when light rain showers");
-//    }
-//    if (rainSenseReading > 500) {
-//      rainMsg = F("Not Raining.");
-//      power_to_solenoid = true;
-//    }
-//    else power_to_solenoid = false;
+    //    if (rainSenseReading < 500)  {
+    //      rainMsg = F("It is raining heavily !");
+    //      power_to_solenoid = false;
+    //    }
+    //    if (rainSenseReading < 300) {
+    //      rainMsg = F("Moderate rain.");
+    //      power_to_solenoid = false;
+    //      soilMsg = F("Watering plant turned off when raining");
+    //    }
+    //    if (rainSenseReading < 200) {
+    //      rainMsg = F("Light Rain Showers !");
+    //      power_to_solenoid = false;
+    //      soilMsg = F("Watering plant turned off when light rain showers");
+    //    }
+    //    if (rainSenseReading > 500) {
+    //      rainMsg = F("Not Raining.");
+    //      power_to_solenoid = true;
+    //    }
+    //    else power_to_solenoid = false;
     int hr = util::getHour();
     // Do not water plant at night
-    if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
-      power_to_solenoid = false;
-      soilMsg = "Watering plant turned off at night";
-    }
-    if (watrLvlSnsr >= 400) {
-      power_to_solenoid = false;
-      soilMsg = "Pot full of water";
-    }
+    //    if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
+    //      power_to_solenoid = false;
+    //      soilMsg = "Watering plant turned off at night";
+    //    }
+    //    if (watrLvlSnsr >= 400) {
+    //      power_to_solenoid = false;
+    //      soilMsg = "Pot full of water";
+    //    }
     // Turn on Solenoid Valve if soil moisture value less than 25
     if (power_to_solenoid == true)
     { // i.e. if onBoardLedState is HIGH
-      soilMsg = F("Soil is dry. ");
-      // do not water pot if its raining or if it is night.
-      if (analogValue > 300) {
-        soilMsg = soilMsg +  F("Watering the plant.");
-        // turn solenoid off after 45 sec
-        digitalWrite(solenoidPin, HIGH);
-        //        digitalWrite(buzzerout, HIGH);
-      }
-      // if the Led is on, we must wait for the duration to expire before turning it off
+      soilMsg = soilMsg +  F("Soil dry. Watering the plant.");
+      // turn solenoid off after 45 sec
+      digitalWrite(solenoidPin, HIGH);
+      // if the Solenoid is on, we must wait for the duration to expire before turning it off
       if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
         // time is up, so change the state to LOW
         power_to_solenoid = false; // don't execute this again
         digitalWrite(solenoidPin, LOW);
-        //        digitalWrite(buzzerout, LOW);
       }
       // and save the time when we made the change
       previousOnBoardLedMillis += blinkDuration;
     } else
     {
-//      soilMsg = F("Soil is damp..");
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
-      //      digitalWrite(buzzerout, LOW);
     }
   }
   //If button pressed...
@@ -421,6 +391,32 @@ void loop()
       flag = 0; //change flag variable again
     }
   }
+
+  // inserting to sql database on mysql server
+  INSERT_SQL = "";
+  INSERT_SQL.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
+  INSERT_SQL.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture,");
+  INSERT_SQL.concat(" wateringPot1) VALUES ('");
+  INSERT_SQL.concat(outdoorTempInC);
+  INSERT_SQL.concat("', '");
+  INSERT_SQL.concat(outoorHumidity);
+  INSERT_SQL.concat("', '");
+  INSERT_SQL.concat(indorTempinC);
+  INSERT_SQL.concat("', '");
+  INSERT_SQL.concat(h);
+  INSERT_SQL.concat("', '");
+  INSERT_SQL.concat(val);
+  INSERT_SQL.concat("', '");
+  INSERT_SQL.concat(avgVal);
+  INSERT_SQL.concat("', 'N/A");
+  //
+  //        if (wateringBasedOnAlarm){
+  //          waterMsg = "water based on alarm";
+  //
+  //        } else waterMsg = soilMsg;
+  //        INSERT_SQL.concat(waterMsg);
+  INSERT_SQL.concat("');");
+  //        Serial.println(INSERT_SQL);
 
   EthernetClient client = server.available();  // try to get client
 
@@ -505,13 +501,13 @@ void loop()
             client.print(F("%<br>Dew Point: "));
             client.print(outdoordP);
             client.print(F("&#8451; Heat Index: "));
-            
+
             client.print(outdoorhIinCel);
             client.print(F(" &#8451;/ "));
             client.print(outdoorhIinFah);
             client.println(F(" &#8457; <br>"));
 
- 
+
             // --------------- Drawing Room ------------------//
             client.print("<br>Indoor temperature: ");
             client.print(indorTempinC);
@@ -592,63 +588,74 @@ void loop()
     flag = 0; //change flag variable again
     // save the "current" time
     previousMillis = millis();
+
   }
 
   // perform sql insert after 5 minutes
-    if ((millis() - timer) > sqlInsertInterval) {
-//      ICMPEchoReply echoReply = ping(server_addr, 4);
-//      if (echoReply.status == SUCCESS)
-//      {
-        // timed out
-        timer += sqlInsertInterval;// reset timer by moving it along to the next interval
-  
-        // inserting to sql database on mysql server
-        INSERT_SQL = "";
-        INSERT_SQL.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
-        INSERT_SQL.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture,");
-        INSERT_SQL.concat(" wateringPot1) VALUES ('");
-        INSERT_SQL.concat(outdoorTempInC);
-        INSERT_SQL.concat("', '");
-        INSERT_SQL.concat(outoorHumidity);
-        INSERT_SQL.concat("', '");
-        INSERT_SQL.concat(indorTempinC);
-        INSERT_SQL.concat("', '");
-        INSERT_SQL.concat(h);
-        INSERT_SQL.concat("', '");
-        INSERT_SQL.concat(val);
-        INSERT_SQL.concat("', '");
-        INSERT_SQL.concat(avgVal);
-        INSERT_SQL.concat("', 'N/A");
-//        
-//        if (wateringBasedOnAlarm){
-//          waterMsg = "water based on alarm";
-//       
-//        } else waterMsg = soilMsg;
-//        INSERT_SQL.concat(waterMsg);
-        INSERT_SQL.concat("');");   
-//        Serial.println(INSERT_SQL);     
+  if ((millis() - timer) > sqlInsertInterval) {
 
-        if (!connected) {
-          Serial.println("Establishing Connection");
-          my_conn.mysql_connect(server_addr, 3306, user, password);
-          connected = true;
-        }
-        else if (connected == true)
-        {
-          const char *mycharp = INSERT_SQL.c_str();
-//          my_conn.cmd_query("use arduinoSensorData;");
-          Serial.print("Inserting : ");
-          Serial.println(INSERT_SQL);
-          my_conn.cmd_query(mycharp);
-//           my_conn.cmd_query(INSERT_SQL);
-          Serial.println("Connection Successfull,inserting to database.");
-          sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
-        }
-        else {
-          Serial.println("Connection failed.");
-        }
-//      }
+    // if the soil sensor is off turn it on and vice-versa:
+    if (soilSensorState == LOW) {
+      soilSensorState = HIGH;
+
+      // subtract the last reading:
+      total = total - readings[readIndex];
+      // read from the sensor:
+      val = analogRead(SENSE);
+      readings[readIndex] =  val / 10;
+      // add the reading to the total:
+      total = total + readings[readIndex];
+      // advance to the next position in the array:
+      readIndex = readIndex + 1;
+
+      // if we're at the end of the array...
+      if (readIndex >= numReadings) {
+        // ...wrap around to the beginning:
+        readIndex = 0;
+      }
+
+      // calculate the average as well after seconds in interval.
+      avgVal = total / numReadings;
+
     }
+    //  else
+    //  {
+    //
+    //  }
+    // set the LED with the ledState of the variable:
+    digitalWrite(power_soilMoist_pin, soilSensorState);
+
+
+    //      ICMPEchoReply echoReply = ping(server_addr, 4);
+    //      if (echoReply.status == SUCCESS)
+    //      {
+    // timed out
+    timer += sqlInsertInterval;// reset timer by moving it along to the next interval
+
+    if (!connected) {
+      Serial.println("Establishing Connection");
+      my_conn.mysql_connect(server_addr, 3306, user, password);
+      connected = true;
+    }
+    else if (connected == true)
+    {
+      const char *mycharp = INSERT_SQL.c_str();
+      //          my_conn.cmd_query("use arduinoSensorData;");
+      Serial.print("Inserting : ");
+      Serial.println(INSERT_SQL);
+      my_conn.cmd_query(mycharp);
+      //           my_conn.cmd_query(INSERT_SQL);
+      Serial.println("Connection Successfull,inserting to database.");
+      sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
+    }
+    else {
+      Serial.println("Connection failed.");
+    }
+    //      }
+  } else
+  {
+    soilSensorState = LOW;
+  }
 
 
 }
