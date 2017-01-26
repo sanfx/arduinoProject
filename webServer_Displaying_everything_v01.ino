@@ -118,7 +118,7 @@ int buttonState = 0;
 const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we are using
 bool soilSensorState = LOW;
 #define power_soilMoist_pin 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
-const int8_t rainsense = 0; // analog sensor input pin A0
+const int8_t rainsense = A0; // analog sensor input pin A0
 //const int buzzerout = 4; // digital output pin D2 - buzzer output
 const int8_t pwatLvlSense = A2; // Pot Water Level Sensor A2 connected with blue wire
 int SENSE = A1; // Soil Sensor input at Analog PIN A1 Green wire
@@ -326,25 +326,25 @@ void loop()
     } else soilMsg = F("Sensor detected, Soil is damp.");
 
 
-    //    if (rainSenseReading < 500)  {
-    //      rainMsg = F("It is raining heavily !");
-    //      power_to_solenoid = false;
-    //    }
-    //    if (rainSenseReading < 300) {
-    //      rainMsg = F("Moderate rain.");
-    //      power_to_solenoid = false;
-    //      soilMsg = F("Watering plant turned off when raining");
-    //    }
-    //    if (rainSenseReading < 200) {
-    //      rainMsg = F("Light Rain Showers !");
-    //      power_to_solenoid = false;
-    //      soilMsg = F("Watering plant turned off when light rain showers");
-    //    }
-    //    if (rainSenseReading > 500) {
-    //      rainMsg = F("Not Raining.");
-    //      power_to_solenoid = true;
-    //    }
-    //    else power_to_solenoid = false;
+    if (rainSenseReading < 500)  {
+      rainMsg = F("It is raining heavily !");
+      power_to_solenoid = false;
+    }
+    if (rainSenseReading < 330) {
+      rainMsg = F("Moderate rain.");
+      power_to_solenoid = false;
+      soilMsg = F("Watering plant turned off when raining");
+    }
+    if (rainSenseReading < 200) {
+      rainMsg = F("Light Rain Showers !");
+      power_to_solenoid = false;
+      soilMsg = F("Watering plant turned off when light rain showers");
+    }
+    if (rainSenseReading > 500) {
+      rainMsg = F("Not Raining.");
+      power_to_solenoid = true;
+    }
+    else power_to_solenoid = false;
     int hr = util::getHour();
     // Do not water plant at night
     //    if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
@@ -486,13 +486,12 @@ void loop()
             client.print(F("<p style='color:red';style='font-family: Arial'> LIVE: </p>"));
             util::displayTime(client);
             if (rainSenseReading < 500) {
-              client.print(rainMsg);
-              client.print(F(" Rain Sensor reads: "));
-              client.println(rainSenseReading);
+              client.print(F("<hr><br>Rain Sensor reads: "));
+              client.print(rainSenseReading);
+              client.print(" ");
+              client.println(rainMsg);
             }
-
-
-            client.print(F("<br>Outdoor Temperature: <u>+</u>"));
+            client.print(F("<hr><br>Outdoor Temperature: <u>+</u>"));
             client.print(outdoorTempInC, 1);
             client.print(F("&#8451; / "));
             client.print(outdoorTempInF);
@@ -521,25 +520,26 @@ void loop()
             client.print(hIinCel);
             client.print(F(" &#8451;/ "));
             client.print(hi);
-            client.println(F(" &#8457; <br>"));
+            client.println(F(" &#8457; <br><hr>"));
 
 
-            if (analogValue < 10) {
-              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
-            }
-            else if (analogValue > 10 && analogValue < 50) {
-              client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
-            }
-            else if (analogValue >= 50 && analogValue <= 100) {
-              client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
-            }
-            else {
-              client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
-            }
+//            if (analogValue < 10) {
+//              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
+//            }
+//            else if (analogValue > 10 && analogValue < 50) {
+//              client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
+//            }
+//            else if (analogValue >= 50 && analogValue <= 100) {
+//              client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
+//            }
+//            else {
+//              client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
+//            }
+//
+//            client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
+//            client.print(analogValue);
+//            client.println(F("</span></div>"));
 
-            client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
-            client.print(analogValue);
-            client.println(F("</span></div>"));
             client.print(F("<br>Pot Soil Moisture: "));
             client.print(val);
             client.print(F(". Average Soil Moisture: "));
@@ -547,7 +547,7 @@ void loop()
             client.print(F("<br><a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
             client.println(soilMsg);
             if (wateringBasedOnAlarm) {
-              client.println(F("Watering plant based on set alarm ."));
+              client.println(F(". Watering plant based on set alarm ."));
             }
             client.println (F("</body></html>"));
           }
