@@ -25,33 +25,6 @@ DHT dhtOutdoor(OUTDOORDHTPIN, DHTTYPE);
 //ICMPPing ping(pingSocket, (uint16_t)random(0, 255));
 
 
-const char htmlStyleMultiline[] PROGMEM = "<style>"
-    ".tooltip {"
-    "    position: relative;"
-    "    display: inline-block;"
-    "   border-bottom: 1px dotted black;"
-    "}"
-
-    ".tooltip .tooltiptext {"
-    "   visibility: hidden;"
-    "   width: 120px;"
-    "   background-color: black;"
-    "   color: #fff;"
-    "   text-align: center;"
-    "    border-radius: 6px;"
-    "    padding: 5px 0;"
-
-    "    /* Position the tooltip */"
-    "    position: absolute;"
-    "    z-index: 1;"
-    "}"
-
-    ".tooltip:hover .tooltiptext {"
-    "    visibility: visible;"
-    "}"
-    "</style>";
-
-bool connected = false;
 bool wateringBasedOnAlarm = true;
 
 // Define the number of samples to keep track of.  The higher the number,
@@ -70,12 +43,12 @@ int average = 0;                // the average
 
 /* Setup for the Connector/Arduino */
 Connector my_conn; // The Connector/Arduino reference
+bool connected = false;
 
-char user[] = "arduino";
-char password[] = "arduino";
-String INSERT_SQL = "";
-//char INSERT_SQL[295];
-String waterMsg = "";
+const char user[] = "arduino";
+const char password[] = "arduino";
+String insertSql = "";
+//char insertSql[295];
 
 int mint = 0;
 
@@ -104,7 +77,7 @@ char req_index = 0;              // index into HTTP_req buffer
 
 
 String rainMsg;
-unsigned long sqlInsertInterval = 1;
+unsigned long sqlInsertInterval = 250;
 
 unsigned long timer = 0; // timer for sql insert after 5 minutes
 unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
@@ -130,7 +103,7 @@ int avgVal = 0;
 int lightSensorPin = 3; // A3, earlier it was A8
 int analogValue = 0;
 
-String soilMsg;
+String soilMsg = "No update";
 
 // the interval in mS
 unsigned long interval = 10000; // the time we need to wait to finish watering the plant.
@@ -156,10 +129,11 @@ void setup() {
   pinMode(rainsense, INPUT);
 
   // initialize all the readings to 0:
-  for (int thisReading = 0; thisReading < numReadings; thisReading++) {
+  for (int thisReading = 0; thisReading < numReadings; thisReading++)
+  {
     readings[thisReading] = 0;
   }
-
+  power_to_solenoid = false;
   startEthernet();
   // connect to mysql server
   connected = my_conn.mysql_connect(server_addr, 3306, user, password);
@@ -207,8 +181,8 @@ bool waterThePlant()
   } else
 
   {
-    // explicitly set to false which is also the default state set in beginning.
     digitalWrite(solenoidPin, LOW);
+    // explicitly set to false which is also the default state set in beginning.
     power_to_solenoid = false;
     return power_to_solenoid;
   }
@@ -226,12 +200,12 @@ float outdoorhIinCel;
 
 float indorTempinC;
 float indorTempinF;
-float humidity;
+float indoorHumidity;
 float dP; // dew point
 float dPF; // dew point in fahrenheit
 float tF; // temperature in fahrenheit
 float hi; // heat index in fahrenheit of indoor
-float h;  // humidity of indoor
+// float h;  // humidity of indoor
 float hIinFah;
 float hIinCel;  // heat index in celcius of indoor
 
@@ -268,7 +242,7 @@ void outputJson(EthernetClient client, bool formatted = false)
   client.print("\" , \"heat_index_in_Cel\" : \"");
   client.print(hIinCel);
   client.print("\" , \"humidity\" : \"");
-  client.print(h);
+  client.print(indoorHumidity);
   client.print("\"}] , \"pots\" : [{\"soilMoist\" : \"");
   client.print(val);
   client.print("\", \"avgSoilMoist\" :\"");
@@ -283,15 +257,15 @@ void loop()
   // Reading temperature or humidity takes about 250 milliseconds!
   delay(250);
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-  h = dhtDrwRom.readHumidity();
+  indoorHumidity = dhtDrwRom.readHumidity();
   // Read temperature as Celsius
   indorTempinC = dhtDrwRom.readTemperature();
   // Read temperature as Fahrenheit
   indorTempinF = dhtDrwRom.readTemperature(true);
   // Compute heat index, Must send in temp in Fahrenheit!
-  hi = dhtDrwRom.computeHeatIndex(indorTempinF, h);
+  hi = dhtDrwRom.computeHeatIndex(indorTempinF, indoorHumidity);
   hIinCel = (hi + 40) / 1.8 - 40;
-  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, h));
+  dP = (Dewpnt_heatIndx::dewPointFast(indorTempinC, indoorHumidity));
   dPF = ((dP * 9) / 5) + 32;
 
   // outoor DHT sensor readings
@@ -301,10 +275,10 @@ void loop()
   // Read temperature as Fahrenheit
   outdoorTempInF = dhtOutdoor.readTemperature(true);
   // Compute outdoor heat index, Must send in temp in Fahrenheit!
-  outdoorhIinFah = dhtOutdoor.computeHeatIndex(outdoorTempInF, h);
+  outdoorhIinFah = dhtOutdoor.computeHeatIndex(outdoorTempInF, outoorHumidity);
   outdoorhIinCel = (outdoorhIinFah + 40) / 1.8 - 40;
   outdoordP = (Dewpnt_heatIndx::dewPointFast(outdoorTempInC, outoorHumidity));
-  outdoordPF = ((dP * 9) / 5) + 32;
+  outdoordPF = ((outdoordP * 9) / 5) + 32;
 
   buttonState = digitalRead(buttonPin);
   currentMillis = millis();   // capture the latest value of millis()
@@ -320,45 +294,50 @@ void loop()
 
   // if not time to water plant check soil moisture
   if (!wateringBasedOnAlarm) {
-    if (avgVal < DRY_SOIL_DEFAULT ) {
-      power_to_solenoid = true;
-      soilMsg = F("Sensor detected, Soil is dry.");
-    } else soilMsg = F("Sensor detected, Soil is damp.");
+    if (avgVal > DRY_SOIL_DEFAULT ) {
+      soilMsg = "Soil is damp.";
+    } else
 
+    {
+      // Sensor detected, Soil is dry.
+      // check for rain.
+      if (rainSenseReading > 500) {
+        rainMsg = F("Not Raining.");
+        power_to_solenoid = true;
+      }
+      else // if (rainSenseReading < 500)
+      {
+        power_to_solenoid = false;
+        rainMsg = F("It is raining heavily !");
+        soilMsg = "turned off when raining";
+        if (rainSenseReading < 330)
+        {
+          rainMsg = F("Moderate rain.");
+        }
+        else if (rainSenseReading < 200)
+        {
+          rainMsg = F("Light Rain Showers !");
+        }
+      }
+      //      if (watrLvlSnsr >= 400)
+      //      {
+      //        power_to_solenoid = false;
+      //        soilMsg = "Pot full of water";
+      //      }
+      // else power_to_solenoid = false;
+      int hr = util::getHour();
+      // Do not water plant at night
+      if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7))
+      {
+        power_to_solenoid = false;
+        soilMsg = "turned off at night";
+      }
 
-    if (rainSenseReading < 500)  {
-      rainMsg = F("It is raining heavily !");
-      power_to_solenoid = false;
     }
-    if (rainSenseReading < 330) {
-      rainMsg = F("Moderate rain.");
-      power_to_solenoid = false;
-      soilMsg = F("Watering plant turned off when raining");
-    }
-    if (rainSenseReading < 200) {
-      rainMsg = F("Light Rain Showers !");
-      power_to_solenoid = false;
-      soilMsg = F("Watering plant turned off when light rain showers");
-    }
-    if (rainSenseReading > 500) {
-      rainMsg = F("Not Raining.");
-      power_to_solenoid = true;
-    }
-    else power_to_solenoid = false;
-    int hr = util::getHour();
-    // Do not water plant at night
-    //    if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7)) {
-    //      power_to_solenoid = false;
-    //      soilMsg = "Watering plant turned off at night";
-    //    }
-    //    if (watrLvlSnsr >= 400) {
-    //      power_to_solenoid = false;
-    //      soilMsg = "Pot full of water";
-    //    }
-    // Turn on Solenoid Valve if soil moisture value less than 25
+    // Turn on Solenoid Valve and water the plants
     if (power_to_solenoid == true)
     { // i.e. if onBoardLedState is HIGH
-      soilMsg = soilMsg +  F("Soil dry. Watering the plant.");
+      soilMsg = "Soil dry,Watering plant";
       // turn solenoid off after 45 sec
       digitalWrite(solenoidPin, HIGH);
       // if the Solenoid is on, we must wait for the duration to expire before turning it off
@@ -369,7 +348,8 @@ void loop()
       }
       // and save the time when we made the change
       previousOnBoardLedMillis += blinkDuration;
-    } else
+    }
+    else
     {
       power_to_solenoid = false; // don't execute this again
       digitalWrite(solenoidPin, LOW);
@@ -391,32 +371,6 @@ void loop()
       flag = 0; //change flag variable again
     }
   }
-
-  // inserting to sql database on mysql server
-  INSERT_SQL = "";
-  INSERT_SQL.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
-  INSERT_SQL.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture,");
-  INSERT_SQL.concat(" wateringPot1) VALUES ('");
-  INSERT_SQL.concat(outdoorTempInC);
-  INSERT_SQL.concat("', '");
-  INSERT_SQL.concat(outoorHumidity);
-  INSERT_SQL.concat("', '");
-  INSERT_SQL.concat(indorTempinC);
-  INSERT_SQL.concat("', '");
-  INSERT_SQL.concat(h);
-  INSERT_SQL.concat("', '");
-  INSERT_SQL.concat(val);
-  INSERT_SQL.concat("', '");
-  INSERT_SQL.concat(avgVal);
-  INSERT_SQL.concat("', 'N/A");
-  //
-  //        if (wateringBasedOnAlarm){
-  //          waterMsg = "water based on alarm";
-  //
-  //        } else waterMsg = soilMsg;
-  //        INSERT_SQL.concat(waterMsg);
-  INSERT_SQL.concat("');");
-  //        Serial.println(INSERT_SQL);
 
   EthernetClient client = server.available();  // try to get client
 
@@ -445,7 +399,7 @@ void loop()
           client.println("HTTP/1.1 200 OK");
           // remainder of header follows below, depending on if
           // web page or XML page is requested
-          // Ajax request - send XML file
+          // Ajax request - send Json file
           if (util::StrContains(HTTP_req, "json") or util::StrContains(HTTP_req, "json?format=json")) {
             // send rest of HTTP header
             // client.println("Content-Type: application/json;charset=utf-8");
@@ -456,7 +410,7 @@ void loop()
             client.println();
             outputJson(client, true);
           } else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
-            soilMsg = "Manual watering the plant";
+            soilMsg = "Manual watering";
             client.println(F("Content-Type: text/html"));
             client.println("Access-Control-Allow-Origin: *");
             client.println(F("Connection: close"));
@@ -477,10 +431,10 @@ void loop()
             client.println(F("<!DOCTYPE HTML>"));
             client.println(F("<html><head><title>"));
             client.println(F("Welcome to Arduino Mega WebServer</title>"));
-            client.println("<meta name='apple-mobile-web-app-capable' content='yes' />");
-            client.println("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />");
-            client.println("<!--link rel='stylesheet' type='text/css' href='http://randomnerdtutorials.com/ethernetcss.css' /-->");
-            util::printProgStr(client, htmlStyleMultiline );
+            client.println(F("<meta name='apple-mobile-web-app-capable' content='yes' />"));
+            client.println(F("<meta name='apple-mobile-web-app-status-bar-style' content='black-translucent' />"));
+            client.println("<!-- link rel='stylesheet' type='text/css' href='http://randomnerdtutorials.com/ethernetcss.css'-->");
+            util::printProgStr(client, util::htmlStyleMultiline);
             client.println(F("</head><body style='background-color:grey'>"));
             client.println(c);
             client.print(F("<p style='color:red';style='font-family: Arial'> LIVE: </p>"));
@@ -495,16 +449,16 @@ void loop()
             client.print(outdoorTempInC, 1);
             client.print(F("&#8451; / "));
             client.print(outdoorTempInF);
-            client.println(F(" &#8457;, Humidity: "));
+            client.println(F("&#8457;, Humidity: "));
             client.print(outoorHumidity, 1);
             client.print(F("%<br>Dew Point: "));
             client.print(outdoordP);
             client.print(F("&#8451; Heat Index: "));
 
             client.print(outdoorhIinCel);
-            client.print(F(" &#8451;/ "));
+            client.print(F("&#8451;/ "));
             client.print(outdoorhIinFah);
-            client.println(F(" &#8457; <br>"));
+            client.println(F("&#8457; <br>"));
 
 
             // --------------- Drawing Room ------------------//
@@ -513,32 +467,32 @@ void loop()
             client.print("&#8451;/ ");
             client.println(indorTempinF);
             client.println(F(" &#8457;, Humidity: "));
-            client.print(h, 1);
+            client.print(indoorHumidity, 1);
             client.print(F("%<br>Dew Point: "));
             client.print(dP);
             client.print(F("&#8451; Heat Index: "));
             client.print(hIinCel);
-            client.print(F(" &#8451;/ "));
+            client.print(F("&#8451;/ "));
             client.print(hi);
-            client.println(F(" &#8457; <br><hr>"));
+            client.println(F("&#8457; <br><hr>"));
 
 
-//            if (analogValue < 10) {
-//              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
-//            }
-//            else if (analogValue > 10 && analogValue < 50) {
-//              client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
-//            }
-//            else if (analogValue >= 50 && analogValue <= 100) {
-//              client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
-//            }
-//            else {
-//              client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
-//            }
-//
-//            client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
-//            client.print(analogValue);
-//            client.println(F("</span></div>"));
+            //            if (analogValue < 10) {
+            //              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
+            //            }
+            //            else if (analogValue > 10 && analogValue < 50) {
+            //              client.println(F("<br><div class='tooltip'>Fair amount of<font style='color:yellow';><b>light</b></font>, but not very bright"));
+            //            }
+            //            else if (analogValue >= 50 && analogValue <= 100) {
+            //              client.println(F("<br><div class='tooltip'>Fair amount of <font style='color:yellow';><b>light</b></font>, but not bright enough."));
+            //            }
+            //            else {
+            //              client.println(F("<br><div class='tooltip'>It is Full Bright Day<font style='color:green';><b> :) </b></font>."));
+            //            }
+            //
+            //            client.print(F("<span class='tooltiptext'> LDR Value Reads: "));
+            //            client.print(analogValue);
+            //            client.println(F("</span></div>"));
 
             client.print(F("<br>Pot Soil Moisture: "));
             client.print(val);
@@ -547,7 +501,7 @@ void loop()
             client.print(F("<br><a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
             client.println(soilMsg);
             if (wateringBasedOnAlarm) {
-              client.println(F(". Watering plant based on set alarm ."));
+              client.println(F("<br><br>Watering plant based on set alarm ."));
             }
             client.println (F("</body></html>"));
           }
@@ -618,11 +572,8 @@ void loop()
       avgVal = total / numReadings;
 
     }
-    //  else
-    //  {
-    //
-    //  }
-    // set the LED with the ledState of the variable:
+
+    // set the soil moisture sensor with the ledState of the variable
     digitalWrite(power_soilMoist_pin, soilSensorState);
 
 
@@ -639,12 +590,37 @@ void loop()
     }
     else if (connected == true)
     {
-      const char *mycharp = INSERT_SQL.c_str();
-      //          my_conn.cmd_query("use arduinoSensorData;");
-      Serial.print("Inserting : ");
-      Serial.println(INSERT_SQL);
+      // inserting to sql database on mysql server
+      insertSql = "";
+      insertSql.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
+      insertSql.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture,");
+      insertSql.concat(" wateringPot1) VALUES ('");
+      insertSql.concat(outdoorTempInC);
+      insertSql.concat("', '");
+      insertSql.concat(outoorHumidity);
+      insertSql.concat("', '");
+      insertSql.concat(indorTempinC);
+      insertSql.concat("', '");
+      insertSql.concat(indoorHumidity);
+      insertSql.concat("', '");
+      insertSql.concat(val);
+      insertSql.concat("', '");
+      insertSql.concat(avgVal);
+      insertSql.concat("', '");
+      if (wateringBasedOnAlarm)
+      {
+        insertSql.concat("water based on alarm");
+      }
+      else
+      {
+        insertSql.concat(soilMsg);
+      }
+      insertSql.concat("');");
+      const char *mycharp = insertSql.c_str();
+      my_conn.cmd_query("use arduinoSensorData;");
+      //      Serial.print("Inserting : ");
+      Serial.println(insertSql);
       my_conn.cmd_query(mycharp);
-      //           my_conn.cmd_query(INSERT_SQL);
       Serial.println("Connection Successfull,inserting to database.");
       sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
     }
