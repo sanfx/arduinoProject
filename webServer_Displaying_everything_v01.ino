@@ -364,9 +364,7 @@ void loop()
     { // i.e. if onBoardLedState is HIGH
       soilMsg = "Watering plant";
       // turn solenoid off after 45 sec
-
-      //       digitalWrite(solenoidPin, HIGH);
-
+      digitalWrite(solenoidPin, HIGH);
       // if the Solenoid is on, we must wait for the duration to expire before turning it off
       if (currentMillis - previousOnBoardLedMillis >= blinkDuration) {
         // time is up, so change the state to LOW
