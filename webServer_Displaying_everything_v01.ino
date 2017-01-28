@@ -470,37 +470,45 @@ void loop()
               client.print(" ");
               client.println(rainMsg);
             }
-            client.print(F("<hr><br>Outdoor Temperature: <u>+</u>"));
-            client.print(outdoorTempInC, 1);
-            client.print(F("&#8451; / "));
-            client.print(outdoorTempInF);
-            client.println(F("&#8457;, Humidity: "));
-            client.print(outoorHumidity, 1);
-            client.print(F("%<br>Dew Point: "));
-            client.print(outdoordP);
-            client.print(F("&#8451; Heat Index: "));
+            if (isnan(outdoorTempInC) || isnan(outoorHumidity)) {
+              client.println("Failed to read from outdoor DHT22 Sensor");
+            } else {
+              client.print(F("<hr><br>Outdoor Temperature: <u>+</u>"));
+              client.print(outdoorTempInC, 1);
+              client.print(F("&#8451; / "));
+              client.print(outdoorTempInF);
+              client.println(F("&#8457;, Humidity: "));
+              client.print(outoorHumidity, 1);
+              client.print(F("%<br>Dew Point: "));
+              client.print(outdoordP);
+              client.print(F("&#8451; Heat Index: "));
 
-            client.print(outdoorhIinCel);
-            client.print(F("&#8451;/ "));
-            client.print(outdoorhIinFah);
-            client.println(F("&#8457; <br>"));
-
+              client.print(outdoorhIinCel);
+              client.print(F("&#8451;/ "));
+              client.print(outdoorhIinFah);
+              client.println(F("&#8457; <br>"));
+            }
 
             // --------------- Drawing Room ------------------//
-            client.print("<br>Indoor temperature: ");
-            client.print(indorTempinC);
-            client.print("&#8451;/ ");
-            client.println(indorTempinF);
-            client.println(F(" &#8457;, Humidity: "));
-            client.print(indoorHumidity, 1);
-            client.print(F("%<br>Dew Point: "));
-            client.print(dP);
-            client.print(F("&#8451; Heat Index: "));
-            client.print(hIinCel);
-            client.print(F("&#8451;/ "));
-            client.print(hi);
-            client.println(F("&#8457; <br><hr>"));
-
+            if (isnan(indorTempinC) || isnan(indoorHumidity))
+            {
+              client.println("Failed to read from indoor DHT22 Sensor");
+            } else
+            {
+              client.print("<br>Indoor temperature: ");
+              client.print(indorTempinC);
+              client.print("&#8451;/ ");
+              client.println(indorTempinF);
+              client.println(F(" &#8457;, Humidity: "));
+              client.print(indoorHumidity, 1);
+              client.print(F("%<br>Dew Point: "));
+              client.print(dP);
+              client.print(F("&#8451; Heat Index: "));
+              client.print(hIinCel);
+              client.print(F("&#8451;/ "));
+              client.print(hi);
+              client.println(F("&#8457; <br><hr>"));
+            }
 
             //            if (analogValue < 10) {
             //              client.println(F("<br><div class='tooltip'>It is  <font style='color:red';>dark</font>."));
