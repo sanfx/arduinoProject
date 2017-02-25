@@ -4,8 +4,26 @@
 namespace util
 {
 
-
-
+const char javaScript[] PROGMEM = "<script>"
+  "function startTime() {"
+  "  var today = new Date();"
+  "  var h = today.getHours();"
+  "  if (h > 12) "
+  "  {"
+  "  h = h - 12;"
+  "  }"
+  "  var m = today.getMinutes();"
+  "  var s = today.getSeconds();"
+  "  m = checkTime(m);"
+  "  s = checkTime(s);"
+  "  document.getElementById('txt').innerHTML = h + ':' + m + ':' + s;"
+  "  var t = setTimeout(startTime, 500);"
+"}"
+"function checkTime(i) {"
+"    if (i < 10) {i = '0' + i};  // add zero in front of numbers < 10"
+"    return i;"
+"}"
+"</script>";
 
 
 const char htmlStyleMultiline[] PROGMEM = "<style>"
@@ -70,6 +88,18 @@ char StrContains(char *str, char *sfind)
   }
 
   return 0;
+}
+
+void redirectBack(EthernetClient client){
+  client.println(F("Content-Type: text/html"));
+  client.println("Access-Control-Allow-Origin: *");
+  client.println(F("Connection: close"));
+  client.println();
+  client.println(F("<!DOCTYPE HTML>"));
+  client.println(F("<html><head><title>"));
+  client.println(F("Welcome to Arduino WebServer</title>"));
+  client.println("<meta http-equiv='refresh' content='0; url=../'>");
+  client.println(F("</head><body></body></html>"));
 }
 
 void printProgStr(EthernetClient client, PGM_P str)
@@ -227,7 +257,9 @@ void displayTime(EthernetClient client)
     hour = hour;
     msg = " AM";
   }
-
+  if (hour == 0){
+    hour = 12;
+  }
   client.print(hour, DEC);
   // convert the byte variable to a decimal number when displayed
   client.print(":");

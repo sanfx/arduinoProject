@@ -7,20 +7,31 @@
 #define DS3231_I2C_ADDRESS 0x68
 #include <Ethernet.h>
 //#include <ICMPPing.h>
+#include <EEPROM.h>
+
+// UV index explanation: http://www2.epa.gov/sunwise/uv-index-scale
+// UV index explanation: http://www.epa.gov/sunwise/doc/what_is_uvindex.html
+
+float Vsig;
+int uVsensorValue;
+long  sum = 0;
 
 #include "Dewpnt_heatIndx.h"
 #include "util.h"
 #include "DHT.h"
 
-
-
 #define DRNGROMDHTPIN 4
 #define OUTDOORDHTPIN 14
 #define DHTTYPE DHT22   // DHT 22  (AM2302)
-
+#define DHTOUTDOOR DHT21 // DHT 21 (AM2301)
 // Initialize DHT sensor for normal 16mhz Arduino
 DHT dhtDrwRom(DRNGROMDHTPIN, DHTTYPE);
-DHT dhtOutdoor(OUTDOORDHTPIN, DHTTYPE);
+DHT dhtOutdoor(OUTDOORDHTPIN, DHTOUTDOOR);
+
+
+/** the current address in the EEPROM (i.e. which byte we're going to write to next) **/
+int addr = 0;
+int samples = 0;
 
 //  ping server socket
 //SOCKET pingSocket = 0;
@@ -68,14 +79,14 @@ int result;
 String readString;
 // Initialize the Ethernet server library with the IP address
 // and port you want to use (port 8025 is default for HTTP):
-EthernetServer server(8025);
+EthernetServer server(8095);
 
 char HTTP_req[REQ_BUF_SZ] = {0}; // buffered HTTP request stored as null terminated string
 char req_index = 0;              // index into HTTP_req buffer
 
 String rainMsg;
 unsigned long sqlInsertInterval = 10;
-
+int sqlEnDis = 0;
 unsigned long timer = 0; // timer for sql insert after 5 minutes
 unsigned long previousOnBoardLedMillis = 0;   // will store last time the LED was updated
 const int blinkDuration = 5000; // number of millisecs that Led's are on - all three leds use this
@@ -85,6 +96,7 @@ const int onBoardLedInterval = 5000; // number of millisecs between blinks
 const int buttonPin = 3;
 int flag = 0;
 int buttonState = 0;
+int uvIndex = 0;
 const int solenoidPin = 6;    // D6 : This is the output pin on the Arduino we are using
 bool soilSensorState = LOW;
 #define power_soilMoist_pin 8 // D8 to 2nd pin on DHT, leave 3rd pin unconnected 4th is gnd
@@ -112,6 +124,7 @@ void setup() {
   myRA.clear();
   // begin Realtime clock module
   Wire.begin();
+  sqlEnDis = EEPROM.read(addr);
   // to set the initial time here:
   // DS3231 seconds, minutes, hours, day, date, month, year
   //  util::setDS3231time(23, 20, 23, 5, 12, 1, 17); // India Time is set
@@ -124,14 +137,14 @@ void setup() {
   digitalWrite(power_to_solenoid, LOW);
 
   pinMode(solenoidPin, OUTPUT); // Sets the pin as an output
-
   pinMode(rainsense, INPUT);
 
   power_to_solenoid = false;
   startEthernet();
-  // connect to mysql server
-  connected = my_conn.mysql_connect(server_addr, 3306, user, password);
-
+  if (EEPROM.read(addr) == 1) {
+    // connect to mysql server
+    connected = my_conn.mysql_connect(server_addr, 3306, user, password);
+  }
   server.begin();
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
@@ -160,7 +173,7 @@ bool waterThePlant()
   util::readDS3231time(&second, &minute, &hour, &dayOfWeek, &dayOfMonth, &month,
                        &year);
 
-  if ((hour  == 16 || hour == 8) and (minute == 10) and (second <= 10) ) {
+  if ((hour  == 16 || hour == 8 || hour == 12) and (minute == 10) and (second <= 10) ) {
     digitalWrite(solenoidPin, HIGH);
     power_to_solenoid = true;
     return power_to_solenoid;
@@ -221,6 +234,8 @@ void outputJson(EthernetClient client, bool formatted = false)
   client.print(outdoorhIinCel);
   client.print("\" , \"humidity\":\"");
   client.print(outoorHumidity);
+  client.print("\" , \"UVSig\":\"");
+  client.print(Vsig);
 
   client.print("\"} , {\"location\" : \"Drawing Room\" , \"temperatureInC\" : \"");
   client.print(indorTempinC);
@@ -246,26 +261,38 @@ void outputJson(EthernetClient client, bool formatted = false)
   client.println();
 }
 
+String getTotalRowsInTable()
+{
+  // cslct = "";
+  // select count(*) from wp_users;
+
+  //cslct.concat(F("select count(*) from arduinoSensorData.sensorLog;"));
+}
+
 
 String getSqlInsertString()
 {
   // inserting to sql database on mysql server
   insertSql = "";
-  insertSql.concat("INSERT INTO arduinoSensorData.sensorLog (out_temperature, out_humidity, ");
+  insertSql.concat("INSERT INTO sensorLog (out_temperature, out_humidity, ");
   insertSql.concat(" drwngRoom_temperature, drwngRoom_humidity, pot1_soilMoisture, pot1_avg_SoilMoisture, ");
-  insertSql.concat("wateringPot1) VALUES ('");
+  insertSql.concat("millieVolt, uv_index, wateringPot1) VALUES (");
   insertSql.concat(outdoorTempInC);
-  insertSql.concat("', '");
+  insertSql.concat(", ");
   insertSql.concat(outoorHumidity);
-  insertSql.concat("', '");
+  insertSql.concat(", ");
   insertSql.concat(indorTempinC);
-  insertSql.concat("', '");
+  insertSql.concat(", ");
   insertSql.concat(indoorHumidity);
-  insertSql.concat("', '");
+  insertSql.concat(", ");
   insertSql.concat(val);
-  insertSql.concat("', '");
+  insertSql.concat(", ");
   insertSql.concat(avgVal);
-  insertSql.concat("', 'N/A");
+  insertSql.concat(", ");
+  insertSql.concat(Vsig);
+  insertSql.concat(", ");
+  insertSql.concat(uvIndex);
+  insertSql.concat(", 'disbaled");
   //      if (wateringBasedOnAlarm)
   //      {
   //        insertSql.concat("water based on alarm");
@@ -274,16 +301,15 @@ String getSqlInsertString()
   //      {
   //        insertSql.concat(soilMsg);
   //      }
-  insertSql.concat("');");
+  insertSql.concat("')");
 
   return insertSql;
 }
 
-
-
 void loop()
-{ //
-
+{
+  // read a byte from the current address of the EEPROM
+  sqlEnDis = EEPROM.read(addr);
   // Reading temperature or humidity takes about 250 milliseconds!
   delay(250);
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
@@ -323,7 +349,7 @@ void loop()
     if ((hr >= 19  && hr <= 23) || (hr >= 0 && hr <= 7))
     {
       power_to_solenoid = false;
-      soilMsg = "turned off at night";
+      soilMsg = " turned off at night.";
     } // if it is day check if soil is dry or not.
     else if  (avgVal < DRY_SOIL_DEFAULT )
     {
@@ -370,7 +396,7 @@ void loop()
         // time is up, so change the state to LOW
         power_to_solenoid = false; // don't execute this again
         digitalWrite(solenoidPin, LOW);
-        soilMsg = "Stopped Watering";
+        soilMsg = " Finished Watering";
       }
       // and save the time when we made the change
       previousOnBoardLedMillis += blinkDuration;
@@ -396,6 +422,19 @@ void loop()
       flag = 0; //change flag variable again
     }
   }
+  // UV Sensor Value Read
+//  uVsensorValue = analogRead(A11);                        //connect UV sensor to Analog 0
+//  int Vsig = (uVsensorValue * (5.0 / 1023.0)) * 1000; //Voltage in miliVolts
+
+  for (int i = 0; i < 1024; i++)
+  {
+    uVsensorValue = analogRead(A11);
+    sum = uVsensorValue + sum;
+//    delay(2);
+  }
+  sum = sum >> 10;
+  Vsig = sum * 4980.0 / 1023.0; // Vsig is the value of voltage measured from the SIG pin of the Grove interface
+  // UV Sensor Value Read ends
 
   EthernetClient client = server.available();  // try to get client
 
@@ -429,22 +468,20 @@ void loop()
             // send rest of HTTP header
             // client.println("Content-Type: application/json;charset=utf-8");
             client.println(F("Content-Type: text/html"));
-            client.println("Access-Control-Allow-Origin: *");
-            client.println("Keep-Alive: timeout=2, max=100");
-            client.println("Connection: keep-alive");
+            client.println(F("Access-Control-Allow-Origin: *"));
+            client.println(F("Keep-Alive: timeout=2, max=100"));
+            client.println(F("Connection: keep-alive"));
             client.println();
             outputJson(client, true);
           } else if (util::StrContains(HTTP_req, "/?waterPlant1")) {
             soilMsg = "Manual watering";
-            client.println(F("Content-Type: text/html"));
-            client.println("Access-Control-Allow-Origin: *");
-            client.println(F("Connection: close"));
-            client.println();
-            client.println(F("<!DOCTYPE HTML>"));
-            client.println(F("<html><head><title>"));
-            client.println(F("Welcome to Arduino WebServer</title>"));
-            client.println("<meta http-equiv='refresh' content='0; url=../'>");
-            client.println(F("</head><body></body></html>"));
+            util::redirectBack(client);
+          } else if (util::StrContains(HTTP_req, "/?sql=0")) {
+            EEPROM.write(addr, 0);
+            util::redirectBack(client);
+          } else if (util::StrContains(HTTP_req, "/?sql=1")) {
+            EEPROM.write(addr, 1);
+            util::redirectBack(client);
           }
           else {  // web page request
             // send rest of HTTP header
@@ -470,8 +507,78 @@ void loop()
               client.print(" ");
               client.println(rainMsg);
             }
+
+            // UV Sensor Reading display
+            client.print(F("<br>The voltage value: "));
+            client.print(Vsig);
+            client.print(F(" mV    --   "));
+
+            if (Vsig < 50) {
+              uvIndex = 0;
+              client.print(F("<br>UV Index: 0 "));
+              client.println(F("Exposure level - NONE (You're probably at home!) "));
+            }
+            if (Vsig > 50 && Vsig < 227) {
+              uvIndex = 1;
+              client.print("UV Index: 1 ");
+              client.println(F("Exposure level - LOW (You're probably at home!) "));
+            }
+            if (Vsig > 227 && Vsig < 318) {
+              uvIndex = 2;
+              client.print(F("UV Index: 2 "));
+              client.println(F("Exposure level - LOW (You can go outside and have fun!) "));
+            }
+            if (Vsig > 318 && Vsig < 408) {
+              uvIndex = 3;
+              client.print("UV Index: 3 "); client.println("Exposure level - MODERATE (Sun starts to annoy you) ");
+            }
+            if (Vsig > 408 && Vsig < 503) {
+              uvIndex = 4;
+              client.print("UV Index: 4 "); client.println("Exposure level - MODERATE (Sun starts to annoy you) ");
+            }
+            if (Vsig > 503 && Vsig < 606) {
+              uvIndex = 5;
+              client.print(F("UV Index: 5 "));
+              client.println(F("Exposure level - MODERATE (Sun starts to annoy you) "));
+            }
+            if (Vsig > 606 && Vsig < 696) {
+              uvIndex = 6;
+              client.print(F("UV Index: 6 "));
+              client.println(F("Exposure level - HIGH (Get out from the sunlight! get out now!) "));
+            }
+            if (Vsig > 696 && Vsig < 795) {
+              uvIndex = 7;
+              client.print("UV Index: 7 "); client.println("Exposure level - HIGH (Get out from the sunlight! get out now!) ");
+            }
+            if (Vsig > 795 && Vsig < 881) {
+              uvIndex = 8;
+              client.print("UV Index: 8 "); client.println("Exposure level - VERY HIGH (Get out from the sunlight! get out now!) ");
+            }
+            if (Vsig > 881 && Vsig < 976) {
+              uvIndex = 9;
+              client.print(F("UV Index: 9 "));
+              client.println(F("Exposure level - VERY HIGH (If you value your health, don't go outside, just stay at home!) "));
+            }
+            if (Vsig > 976 && Vsig < 1079) {
+              uvIndex = 10;
+              client.print(F("UV Index: 10 "));
+              client.println(F("Exposure level - VERY HIGH (If you value your health, don't go outside, just stay at home!) "));
+            }
+            if (Vsig > 1079 && Vsig < 1170) {
+              uvIndex = 11;
+              client.print(F("UV Index: 11 "));
+              client.println(F("Exposure level - EXTREME (If you value your health, don't go outside, just stay at home!) "));
+            }
+            if (Vsig > 1170) {
+              uvIndex = 12;
+              client.print(F("UV Index: 11+ "));
+              client.println(F("Exposure level - EXTREME (You will probably die in 3, 2, 1... Just JOKING, don't be scared...) - intensity of sunlight is really at maximum "));
+            }
+            // UV Sensor Reading display end
+
+
             if (isnan(outdoorTempInC) || isnan(outoorHumidity)) {
-              client.println("Failed to read from outdoor DHT22 Sensor");
+              client.println("<br>Failed to read from outdoor DHT21 Sensor");
             } else {
               client.print(F("<hr><br>Outdoor Temperature: <u>+</u>"));
               client.print(outdoorTempInC, 1);
@@ -492,10 +599,10 @@ void loop()
             // --------------- Drawing Room ------------------//
             if (isnan(indorTempinC) || isnan(indoorHumidity))
             {
-              client.println("Failed to read from indoor DHT22 Sensor");
+              client.println(F("<br>Failed to read from indoor DHT22 Sensor<hr>"));
             } else
             {
-              client.print("<br>Indoor temperature: ");
+              client.print(F("<br>Indoor temperature: "));
               client.print(indorTempinC);
               client.print("&#8451;/ ");
               client.println(indorTempinF);
@@ -531,11 +638,28 @@ void loop()
             client.print(val);
             client.print(F(". Average Soil Moisture: "));
             client.print(avgVal);
-            client.print(F("<br><a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
+            client.print(" <br>");
+            //            client.print(F("<br><a href=\"/?waterPlant1\"\">Water the plant in pot.</a>"));
             client.println(soilMsg);
             if (wateringBasedOnAlarm) {
               client.println(F("<br><br>Watering plant based on set alarm ."));
             }
+            delay(100);
+            if (sqlEnDis == 0)
+            {
+              client.println(F("<br><a href=\"/?sql=1\"\">Enable Database Insertion</a>"));
+            }
+            else if (sqlEnDis == 1)
+            {
+              client.println(F("<br><a href=\"/?sql=0\"\">Disable Database Insertion</a>"));
+            }
+            else
+            {
+              client.print(F("<br> Databse insertion setting not set."));
+              client.print(F("<a href=\"/?sql=1\"\">Enable Database Insertion</a> | "));
+              client.println(F("<a href=\"/?sql=0\"\">Disable Database Insertion</a>"));
+            }
+
             client.println (F("</body></html>"));
           }
           // display received HTTP request on serial port
@@ -580,15 +704,16 @@ void loop()
 
   // perform sql insert after 5 minutes
   if ((millis() - timer) > sqlInsertInterval) {
-
+    samples ++;
     // if the soil sensor is off turn it on and vice-versa:
     if (soilSensorState == LOW) {
       soilSensorState = HIGH;
 
       // read from the sensor:
       val = analogRead(SENSE);
-      // condition when sensor is taken out
-      if (val < 30) {
+      // condition when sensor is taken out or 300 samples are taken
+      if ((val < 30) or (samples == 300)) {
+        samples = 0;
         // reset for new values
         myRA.clear();
       }
@@ -600,35 +725,41 @@ void loop()
 
       // set the soil moisture sensor with the ledState of the variable
       digitalWrite(power_soilMoist_pin, soilSensorState);
-
-
       //      ICMPEchoReply echoReply = ping(server_addr, 4);
       //      if (echoReply.status == SUCCESS)
       //      {
       // timed out
       timer += sqlInsertInterval;// reset timer by moving it along to the next interval
-
-      if (!connected) {
-        Serial.println("Establishing Connection");
-        my_conn.mysql_connect(server_addr, 3306, user, password);
-        connected = true;
+//      sqlEnDis = 0 ; // remove this line
+      if (sqlEnDis == 1) {
+        if (!connected) {
+          Serial.println("Establishing Connection");
+          my_conn.mysql_connect(server_addr, 3306, user, password);
+          connected = true;
+        }
+        else if (connected == true)
+        {
+          my_conn.cmd_query("use arduinoSensorData;");
+//          Serial.print("total Rows: ");
+//          Serial.println(my_conn.cmd_query("select count(*) from sensorLog;"));
+//          Serial.println(my_conn.cmd_query("select * from sensorLog;"));
+          insertSql = getSqlInsertString();
+          const char *mycharp = insertSql.c_str();
+//                my_conn.cmd_query("use arduinoSensorData;");
+//                Serial.print("Inserting : ");
+//                Serial.println(insertSql);
+          Serial.println(mycharp);
+          Serial.println("Connection Successfull,inserting to database.");
+          my_conn.cmd_query(mycharp);
+          sqlInsertInterval = 10000; // set the repeat interval to a  minute after first insertion.
+        } else
+        {
+          // TODO : log to sd card when server is not reachable.
+          Serial.println("Connection failed.");
+        }
       }
-      else if (connected == true)
-      {
-        insertSql = getSqlInsertString();
-        const char *mycharp = insertSql.c_str();
-        //      my_conn.cmd_query("use arduinoSensorData;");
-        //      Serial.print("Inserting : ");
-        //      Serial.println(insertSql);
-        my_conn.cmd_query(mycharp);
-        Serial.println("Connection Successfull,inserting to database.");
-        sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
-      }
-      else {
-        Serial.println("Connection failed.");
-      }
-      //      }
-    } else
+    }
+    else
     {
       soilSensorState = LOW;
     }
