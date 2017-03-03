@@ -47,7 +47,7 @@ bool wateringBasedOnAlarm = true;
 const int numReadings = 20;
 
 // if val of soil moisture is greater than 75 turn on solenoid
-const int8_t DRY_SOIL_DEFAULT = 75;
+const int8_t DRY_SOIL_DEFAULT = 85;
 RunningAverage myRA(numReadings);
 
 /* Setup for the Connector/Arduino */
@@ -261,15 +261,6 @@ void outputJson(EthernetClient client, bool formatted = false)
   client.println();
 }
 
-String getTotalRowsInTable()
-{
-  // cslct = "";
-  // select count(*) from wp_users;
-
-  //cslct.concat(F("select count(*) from arduinoSensorData.sensorLog;"));
-}
-
-
 String getSqlInsertString()
 {
   // inserting to sql database on mysql server
@@ -466,7 +457,7 @@ void loop()
           // Ajax request - send Json file
           if (util::StrContains(HTTP_req, "json") or util::StrContains(HTTP_req, "json?format=json")) {
             // send rest of HTTP header
-            // client.println("Content-Type: application/json;charset=utf-8");
+            client.println("Content-Type: application/json;charset=utf-8");
             client.println(F("Content-Type: text/html"));
             client.println(F("Access-Control-Allow-Origin: *"));
             client.println(F("Keep-Alive: timeout=2, max=100"));
@@ -751,7 +742,7 @@ void loop()
           Serial.println(mycharp);
           Serial.println("Connection Successfull,inserting to database.");
           my_conn.cmd_query(mycharp);
-          sqlInsertInterval = 10000; // set the repeat interval to a  minute after first insertion.
+          sqlInsertInterval = 60000; // set the repeat interval to a  minute after first insertion.
         } else
         {
           // TODO : log to sd card when server is not reachable.
